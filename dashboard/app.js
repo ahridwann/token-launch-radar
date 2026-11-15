@@ -54,13 +54,35 @@
 
   // The model in one function: the page recomputes a row from the snapshot figures and
   // checks the number board.json carries, so the page's code and the board's data agree.
+  // The category tier mirrors lib/model.ts's categoryMultiplier: 'index' first (it
+  // contains 'dex'), then direct fee earners, then allocators, then infrastructure.
+  function categoryOf(row) {
+    var m = DATA.model;
+    var c = (row.category || '').toLowerCase();
+    if (c.indexOf('index') >= 0) return m.category_allocator;
+    if (c.indexOf('dex') >= 0 || c.indexOf('lend') >= 0 || c.indexOf('derivative') >= 0 ||
+        c.indexOf('basis') >= 0 || c.indexOf('yield') >= 0 || c.indexOf('cdp') >= 0 ||
+        c.indexOf('option') >= 0 || c.indexOf('synthetic') >= 0 || c.indexOf('farm') >= 0 ||
+        c.indexOf('liquidity') >= 0 || c.indexOf('prediction') >= 0 ||
+        c.indexOf('collateral') >= 0 || c.indexOf('insurance') >= 0) return m.category_direct;
+    if (c.indexOf('curator') >= 0 || c.indexOf('allocator') >= 0 || c.indexOf('rwa') >= 0 ||
+        c.indexOf('launchpad') >= 0 || c.indexOf('locker') >= 0 || c.indexOf('staking') >= 0 ||
+        c.indexOf('restak') >= 0 || c.indexOf('stable') >= 0 || c.indexOf('reserve') >= 0 ||
+        c.indexOf('cedefi') >= 0 || c.indexOf('governance') >= 0) return m.category_allocator;
+    if (c.indexOf('bridge') >= 0 || c.indexOf('chain') >= 0 || c.indexOf('payment') >= 0 ||
+        c.indexOf('card') >= 0) return m.category_infra;
+    return m.category_neutral;
+  }
+
   function impliedOf(row) {
     var m = DATA.model;
     var growth = Math.min(m.growth_cap, Math.max(m.growth_floor, row.change_7d === null ? 0 : row.change_7d));
     var growthMult = 1 + (growth / 100) * m.growth_weight;
     var age = row.age_days === null ? m.unknown_age_days : row.age_days;
     var maturity = m.maturity_floor + (Math.min(Math.max(age, 0), m.maturity_days) / m.maturity_days) * m.maturity_range;
-    return { value: Math.max(1, Math.round(row.tvl_usd * m.base_multiple * growthMult * maturity)), growthMult: growthMult, maturity: maturity, growth: growth };
+    var category = categoryOf(row);
+    var chains = Math.min(m.chain_cap, 1 + m.chain_step * Math.min(row.chains.length, 5));
+    return { value: Math.max(1, Math.round(row.tvl_usd * m.base_multiple * growthMult * maturity * category * chains)), growthMult: growthMult, maturity: maturity, category: category, chains: chains, growth: growth };
   }
 
   function el(tag, cls, text) {
@@ -223,7 +245,9 @@
       esc(row.name) + ' — the record, not proof that it has none. Its launch is not predicted here, only valued.</p>';
     h += '<h3>How the value is worked out</h3><p>TVL ' + usdShort(row.tvl_usd) + ' × 0.30 = ' + usdShort(row.tvl_usd * DATA.model.base_multiple) +
       ' base, × growth ' + calc.growthMult.toFixed(2) + ' (7d ' + fmtPct(calc.growth) + '), × maturity ' + calc.maturity.toFixed(2) +
-      ' (' + fmtAge(row.age_days) + ' old) = <b>' + usdFull.format(calc.value) + '</b>, which ' + match + '.</p>';
+      ' (' + fmtAge(row.age_days) + ' old), × category ' + calc.category.toFixed(2) + ' (' + esc(row.category || 'no category') +
+      ' fee tier), × chains ' + calc.chains.toFixed(2) + ' (' + row.chains.length + ' chain' + (row.chains.length === 1 ? '' : 's') +
+      ') = <b>' + usdFull.format(calc.value) + '</b>, which ' + match + '.</p>';
     h += '<h3>Seven steps to farm it</h3><ol>';
     row.farm_steps.forEach(function (s, i) {
       h += '<li><b>Step ' + (i + 1) + '.</b> ' + esc(s) + '</li>';

@@ -9,11 +9,12 @@
 <body>
 <header class="top">
   <div class="wrap">
-    <p class="kicker">Token Radar · model radar-2</p>
+    <p class="kicker">Token Radar · model radar-3</p>
     <h1>Which launch is worth farming next?</h1>
     <p class="lede">Every protocol below records no token yet. Each is ranked by what its token would be
-    worth if its record stayed as it is — from its TVL, its seven-day growth, and how long it has
-    run with no token. Click any row for the model maths and the seven steps to farm it.</p>
+    worth if its record stayed as it is — from its TVL, its seven-day growth, how long it has
+    run with no token, how directly its category captures fees, and how many chains it runs
+    on. Click any row for the model maths and the seven steps to farm it.</p>
     <p class="meta" id="meta">Loading the snapshot…</p>
     <div class="stats" id="stats"></div>
   </div>
@@ -51,23 +52,29 @@
   </section>
   <section class="method">
     <h2>How the radar works</h2>
-    <p><strong>Implied value</strong> = TVL × 0.30 × growth × maturity. Growth clamps the seven-day TVL
+    <p><strong>Implied value</strong> = TVL × 0.30 × growth × maturity × category × chains. Growth clamps the seven-day TVL
     change to −50…+150% and counts 60% of it, so a protocol growing 20% reaches 112% of its base and one
     shrinking 20% keeps 88%. Maturity runs 0.70 for a new listing to 1.20 at four years, because a protocol
     that has held value for years with no token has proved it can hold value without one. Age unknown means
-    365 days. No name is ever special-cased: the same arithmetic scores every row, and each detail view
-    recomputes it from the three inputs.</p>
+    365 days. Category is a fee-capture tier from the category string only: 1.15 for direct fee earners
+    (DEX, lending, derivatives, yield, CDP, options, prediction, liquidity, collateral, insurance),
+    1.08 for allocators and yield-bearing assets (curators, allocators, RWA, indexes, staking, stablecoins),
+    1.00 neutral for the rest and for an unknown category, and 0.92 for infrastructure (chain, bridge,
+    payments, cards). Chains adds 2% per chain up to five, capped at 1.10. No name is ever special-cased:
+    the same arithmetic scores every row, and each detail view recomputes it from the five inputs.</p>
     <p><strong>Scope.</strong> The watchlist is the floor, never the ceiling: 40 protocols at or above
     $50M of TVL that record no token and are not a wrapped, staked or bridged product of one that trades.
-    The board adds every other rankable pre-token protocol the snapshot holds — 20 above the floor the
+    The board adds every other rankable pre-token protocol the snapshot holds — 19 above the floor the
     watchlist leaves out, and 138 below it — so the radar finds future launches early.</p>
     <p><strong>Reading the record.</strong> “Records no token” means the snapshot's DefiLlama record
     carries no market cap, no CoinGecko id and no symbol for the protocol. It is the record, not proof:
     a protocol may still have a token its record does not carry. The Live tokens tab shows, separately,
     the protocols whose token already trades, at the market's own value — never mixed into the ranking.</p>
-    <p><strong>Farm plans.</strong> Each plan is generated from the protocol's own category, chains, TVL
-    and age: the capital, the hold time and the weekly cadence follow those figures, and every step states
-    what it costs and how long it takes. Nothing here is financial advice, and a launch is never promised.</p>
+    <p><strong>Farm plans.</strong> Each plan is generated from the protocol's own category, chains, TVL,
+    age and seven-day trend: the capital, the hold time and the weekly cadence follow those figures, the
+    first step names its primary chain and TVL tier, a growing row gets scale-in advice while a shrinking
+    one gets a smaller first deposit until the trend flattens, and every step states what it costs and how
+    long it takes. Nothing here is financial advice, and a launch is never promised.</p>
     <p class="source" id="source"></p>
   </section>
 </main>

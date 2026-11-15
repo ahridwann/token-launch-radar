@@ -1,4 +1,4 @@
-// Token Radar (radar-2): the entrypoint for make.fun's token-radar-01 bounty.
+// Token Radar (radar-3): the entrypoint for make.fun's token-radar-01 bounty.
 //
 // Reads the sealed snapshot from /input/snapshot.json (or --input <file|dir>), scores every
 // pre-token protocol with the model in lib/model.ts, writes the ranked board to

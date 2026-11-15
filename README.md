@@ -6,7 +6,7 @@
 
 Launch Value Radar is a web dashboard that ranks protocols with no token yet by their estimated launch value, built for the [make.fun token-radar-01 bounty](https://make.fun/bounty/token-radar-01) ("Build the best token launch radar", $1,325 in USDC).
 
-The value model is derived from the snapshot's own figures — no protocol names are hardcoded. Each protocol's implied launch value is `TVL × 0.30 × growth × maturity`, where growth is its 7-day TVL change and maturity grows with how long it has run with no token. The board covers 197 protocols (the 40-protocol watchlist plus 157 more), ranked with #1 Steakhouse Financial at ~$722,340,814 of implied launch value. Every row carries 7 concrete farming steps with cost and time estimates. The dashboard is sortable and filterable, has a per-protocol detail view, and runs with no network.
+The value model is derived from the snapshot's own figures — no protocol names are hardcoded. Each protocol's implied launch value is `TVL × 0.30 × growth × maturity × category × chains`, where growth is its 7-day TVL change, maturity grows with how long it has run with no token, category is a fee-capture tier from the category string only (1.15 direct fee earners, 1.08 allocators and yield-bearing assets, 1.00 neutral, 0.92 infrastructure), and chains adds 2% per chain up to five. The board covers 197 protocols (the 40-protocol watchlist plus 157 more), ranked with #1 Steakhouse Financial at ~$858,140,887 of implied launch value. Every row carries 7 concrete farming steps with cost and time estimates, tailored to the protocol's own chain, TVL tier, age and seven-day trend. The dashboard is sortable and filterable, has a per-protocol detail view, and runs with no network.
 
 ## Run it
 

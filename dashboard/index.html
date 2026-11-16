@@ -9,12 +9,13 @@
 <body>
 <header class="top">
   <div class="wrap">
-    <p class="kicker">Token Radar · model radar-3</p>
+    <p class="kicker">Token Radar · model radar-4</p>
     <h1>Which launch is worth farming next?</h1>
     <p class="lede">Every protocol below records no token yet. Each is ranked by what its token would be
-    worth if its record stayed as it is — from its TVL, its seven-day growth, how long it has
-    run with no token, how directly its category captures fees, and how many chains it runs
-    on. Click any row for the model maths and the seven steps to farm it.</p>
+    worth if its record stayed as it is — priced by a size curve fitted to the snapshot's own
+    traded protocols, not by a hand-picked multiple: the curve, its category offsets and its
+    leave-one-out error band are all computed from the snapshot at run time. Click any row
+    for the model maths, the backtest band, the netted farm cost and the seven steps to farm it.</p>
     <p class="meta" id="meta">Loading the snapshot…</p>
     <div class="stats" id="stats"></div>
   </div>
@@ -52,16 +53,37 @@
   </section>
   <section class="method">
     <h2>How the radar works</h2>
-    <p><strong>Implied value</strong> = TVL × 0.30 × growth × maturity × category × chains. Growth clamps the seven-day TVL
-    change to −50…+150% and counts 60% of it, so a protocol growing 20% reaches 112% of its base and one
-    shrinking 20% keeps 88%. Maturity runs 0.70 for a new listing to 1.20 at four years, because a protocol
-    that has held value for years with no token has proved it can hold value without one. Age unknown means
-    365 days. Category is a fee-capture tier from the category string only: 1.15 for direct fee earners
-    (DEX, lending, derivatives, yield, CDP, options, prediction, liquidity, collateral, insurance),
-    1.08 for allocators and yield-bearing assets (curators, allocators, RWA, indexes, staking, stablecoins),
-    1.00 neutral for the rest and for an unknown category, and 0.92 for infrastructure (chain, bridge,
-    payments, cards). Chains adds 2% per chain up to five, capped at 1.10. No name is ever special-cased:
-    the same arithmetic scores every row, and each detail view recomputes it from the five inputs.</p>
+    <p><strong>Implied value — a curve fitted to the snapshot's own traded protocols.</strong>
+    The model fits log market cap = a + b·log TVL + g·growth + y·age by least squares over the
+    traded protocols in this snapshot, excluding exchange tokens, bridges, liquid-staking and
+    wrapped products, stablecoin products and anchored BTC (the same products the watchlist
+    rule excludes), and excluding market-cap-to-TVL ratios outside 0.01–10× as data errors.
+    On this snapshot that is 78 comps. The fitted slope on log TVL is below 1, so implied
+    value grows slower than TVL: a protocol ten times as big is worth roughly four to five
+    times as much, not ten. Growth is the seven-day TVL change clamped to −50…+150% (null
+    counts as 0), then winsorized to the range the comps cover — about −40% to +3% on this
+    snapshot — and age is years since listing (unknown counts as 1), winsorized the same
+    way: the curve never extrapolates a hot week or a long life beyond anything a traded
+    protocol did, so one +4,448% week cannot multiply a small protocol's value by eight.
+    Both terms are fitted, and both come out small per point — the comps pay almost no
+    premium for a hot week or a long life, and their fitted signs flip across comp sets —
+    so ordinary weeks move a row little. Each category then gets a shrunk offset (n/(n+8)) from its comps' mean residual: what its traded
+    protocols actually trade at, not a fee-capture guess. No name is ever special-cased and
+    no coefficient is hardcoded: the same code fits any snapshot the house seals, and each
+    detail view recomputes its row from the fitted coefficients.</p>
+    <p><strong>The band is what the backtest earns.</strong> Every comp is priced again by a fit
+    that never saw it (leave-one-out, coefficients and category offsets both refitted). Half
+    the comps land within about ×1.8 of their real market cap and about a third within 2×;
+    the fit's R² is near 0.3. That is the honest size of the signal in this snapshot, and
+    each row carries its band: implied value ×/÷ the leave-one-out median factor. A wide
+    band is not a failure of the board — it is the measurement, shown next to the number.</p>
+    <p><strong>Netted farm plans.</strong> Each plan is generated from the protocol's own category,
+    chains, TVL, age and seven-day trend: the capital, the hold time and the weekly cadence
+    follow those figures, the first step names its primary chain and TVL tier, a growing row
+    gets scale-in advice while a shrinking one gets a smaller first deposit until the trend
+    flattens, and every step states what it costs and how long it takes. The detail view
+    nets the plan: the capital is a deposit that comes back on exit, so the true cost is the
+    gas across the plan, shown against the low end of the row's backtest band.</p>
     <p><strong>Scope.</strong> The watchlist is the floor, never the ceiling: 40 protocols at or above
     $50M of TVL that record no token and are not a wrapped, staked or bridged product of one that trades.
     The board adds every other rankable pre-token protocol the snapshot holds — 19 above the floor the
@@ -70,11 +92,7 @@
     carries no market cap, no CoinGecko id and no symbol for the protocol. It is the record, not proof:
     a protocol may still have a token its record does not carry. The Live tokens tab shows, separately,
     the protocols whose token already trades, at the market's own value — never mixed into the ranking.</p>
-    <p><strong>Farm plans.</strong> Each plan is generated from the protocol's own category, chains, TVL,
-    age and seven-day trend: the capital, the hold time and the weekly cadence follow those figures, the
-    first step names its primary chain and TVL tier, a growing row gets scale-in advice while a shrinking
-    one gets a smaller first deposit until the trend flattens, and every step states what it costs and how
-    long it takes. Nothing here is financial advice, and a launch is never promised.</p>
+    <p>Nothing here is financial advice, and a launch is never promised.</p>
     <p class="source" id="source"></p>
   </section>
 </main>

@@ -52,37 +52,21 @@
   };
   var esc = function (s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); };
 
-  // The model in one function: the page recomputes a row from the snapshot figures and
-  // checks the number board.json carries, so the page's code and the board's data agree.
-  // The category tier mirrors lib/model.ts's categoryMultiplier: 'index' first (it
-  // contains 'dex'), then direct fee earners, then allocators, then infrastructure.
-  function categoryOf(row) {
-    var m = DATA.model;
-    var c = (row.category || '').toLowerCase();
-    if (c.indexOf('index') >= 0) return m.category_allocator;
-    if (c.indexOf('dex') >= 0 || c.indexOf('lend') >= 0 || c.indexOf('derivative') >= 0 ||
-        c.indexOf('basis') >= 0 || c.indexOf('yield') >= 0 || c.indexOf('cdp') >= 0 ||
-        c.indexOf('option') >= 0 || c.indexOf('synthetic') >= 0 || c.indexOf('farm') >= 0 ||
-        c.indexOf('liquidity') >= 0 || c.indexOf('prediction') >= 0 ||
-        c.indexOf('collateral') >= 0 || c.indexOf('insurance') >= 0) return m.category_direct;
-    if (c.indexOf('curator') >= 0 || c.indexOf('allocator') >= 0 || c.indexOf('rwa') >= 0 ||
-        c.indexOf('launchpad') >= 0 || c.indexOf('locker') >= 0 || c.indexOf('staking') >= 0 ||
-        c.indexOf('restak') >= 0 || c.indexOf('stable') >= 0 || c.indexOf('reserve') >= 0 ||
-        c.indexOf('cedefi') >= 0 || c.indexOf('governance') >= 0) return m.category_allocator;
-    if (c.indexOf('bridge') >= 0 || c.indexOf('chain') >= 0 || c.indexOf('payment') >= 0 ||
-        c.indexOf('card') >= 0) return m.category_infra;
-    return m.category_neutral;
-  }
-
+  // The model in one function: the page recomputes a row from the fitted curve in
+  // DATA.fit and checks the number board.json carries, so the page's code and the
+  // board's data agree. No coefficient lives in this file: the fit rode in data.js.
   function impliedOf(row) {
-    var m = DATA.model;
-    var growth = Math.min(m.growth_cap, Math.max(m.growth_floor, row.change_7d === null ? 0 : row.change_7d));
-    var growthMult = 1 + (growth / 100) * m.growth_weight;
-    var age = row.age_days === null ? m.unknown_age_days : row.age_days;
-    var maturity = m.maturity_floor + (Math.min(Math.max(age, 0), m.maturity_days) / m.maturity_days) * m.maturity_range;
-    var category = categoryOf(row);
-    var chains = Math.min(m.chain_cap, 1 + m.chain_step * Math.min(row.chains.length, 5));
-    return { value: Math.max(1, Math.round(row.tvl_usd * m.base_multiple * growthMult * maturity * category * chains)), growthMult: growthMult, maturity: maturity, category: category, chains: chains, growth: growth };
+    var f = DATA.fit;
+    var growth = Math.min(f.growth_max, Math.max(f.growth_min, Math.min(150, Math.max(-50, row.change_7d === null ? 0 : row.change_7d))));
+    var ageYears = row.age_days === null ? 1 : row.age_days / 365.25;
+    ageYears = Math.min(f.age_max_years, Math.max(f.age_min_years, ageYears));
+    var growthEffect = f.growth_per_point * growth;
+    var ageEffect = f.age_per_year * ageYears;
+    var categoryOffset = (f.category_offsets && f.category_offsets[row.category || '']) || 0;
+    var logValue = f.intercept + f.tvl_slope * Math.log(row.tvl_usd) + growthEffect + ageEffect + categoryOffset;
+    var value = Math.max(1, Math.round(Math.exp(logValue)));
+    return { value: value, low: Math.max(1, Math.round(value / f.loo_median_factor)), high: Math.round(value * f.loo_median_factor),
+      growth: growth, growthEffect: growthEffect, ageYears: ageYears, ageEffect: ageEffect, categoryOffset: categoryOffset };
   }
 
   function el(tag, cls, text) {
@@ -98,7 +82,9 @@
     wl + ' on the watchlist · ' + DATA.live.length + ' live tokens set aside · model ' + DATA.model_version;
   var stats = $('stats');
   [['board rows', DATA.rows.length], ['watchlist covered', wl + ' / ' + DATA.watchlist_size],
-   ['early finds', DATA.early_size], ['top implied value', usdShort(DATA.rows[0].implied_value_usd)]].forEach(function (s) {
+   ['early finds', DATA.early_size], ['comps fitted', DATA.fit.comps_n],
+   ['leave-one-out median error', '×' + DATA.fit.loo_median_factor.toFixed(2)],
+   ['top implied value', usdShort(DATA.rows[0].implied_value_usd)]].forEach(function (s) {
     var d = el('div', 'stat');
     d.appendChild(el('b', null, String(s[1])));
     d.appendChild(el('span', null, s[0]));
@@ -237,17 +223,22 @@
     h += '<p class="sub">Rank #' + row.rank + ' · ' + esc(row.category || 'no category') + ' · ' +
       esc(row.chains.join(', ')) + ' · ' + scopeBadge(row.scope) + ' · listed ' + esc(row.listed_at || 'unknown') + '</p>';
     h += '<div class="grid">' +
-      '<div class="cell"><b>' + usdFull.format(row.implied_value_usd) + '</b><span>Implied value</span></div>' +
+      '<div class="cell"><b>' + usdFull.format(row.implied_value_usd) + '</b><span>Implied value (' + usdShort(row.implied_low_usd) + '–' + usdShort(row.implied_high_usd) + ' band)</span></div>' +
       '<div class="cell"><b>' + usdFull.format(row.tvl_usd) + '</b><span>TVL</span></div>' +
       '<div class="cell"><b>' + fmtPct(row.change_7d) + '</b><span>TVL change, 7 days</span></div>' +
       '<div class="cell"><b>' + fmtAge(row.age_days) + '</b><span>Age with no token</span></div></div>';
     h += '<p class="note"><strong>Records no token.</strong> The snapshot carries no market cap, no CoinGecko id and no symbol for ' +
       esc(row.name) + ' — the record, not proof that it has none. Its launch is not predicted here, only valued.</p>';
-    h += '<h3>How the value is worked out</h3><p>TVL ' + usdShort(row.tvl_usd) + ' × 0.30 = ' + usdShort(row.tvl_usd * DATA.model.base_multiple) +
-      ' base, × growth ' + calc.growthMult.toFixed(2) + ' (7d ' + fmtPct(calc.growth) + '), × maturity ' + calc.maturity.toFixed(2) +
-      ' (' + fmtAge(row.age_days) + ' old), × category ' + calc.category.toFixed(2) + ' (' + esc(row.category || 'no category') +
-      ' fee tier), × chains ' + calc.chains.toFixed(2) + ' (' + row.chains.length + ' chain' + (row.chains.length === 1 ? '' : 's') +
-      ') = <b>' + usdFull.format(calc.value) + '</b>, which ' + match + '.</p>';
+    h += '<h3>How the value is worked out</h3><p>Fitted curve over ' + DATA.fit.comps_n + ' traded comps: ' +
+      'log value = ' + DATA.fit.intercept.toFixed(2) + ' + ' + DATA.fit.tvl_slope.toFixed(2) + '·log TVL (' + usdShort(row.tvl_usd) + ')' +
+      ' + ' + calc.growthEffect.toFixed(2) + ' growth (7d ' + fmtPct(calc.growth) + (row.change_7d !== null && row.change_7d !== calc.growth ? ', winsorized from ' + fmtPct(row.change_7d) : '') + ')' +
+      ' + ' + calc.ageEffect.toFixed(2) + ' age (' + fmtAge(row.age_days) + ')' +
+      ' + ' + calc.categoryOffset.toFixed(2) + ' category (' + esc(row.category || 'no category') + ', shrunk offset)' +
+      ' = <b>' + usdFull.format(calc.value) + '</b>, which ' + match + '. The band is ' + usdShort(calc.low) + '–' + usdShort(calc.high) +
+      ': the value ×/÷ the leave-one-out median factor ×' + DATA.fit.loo_median_factor.toFixed(2) + '.</p>';
+    h += '<p><strong>Netted.</strong> This plan costs $' + row.plan_capital_usd + ' of capital and about $' + row.plan_gas_usd +
+      ' of gas. The capital is a deposit that comes back on exit, so the true cost is the gas: about $' + row.plan_gas_usd +
+      ' against the low end of the band, ' + usdFull.format(row.implied_low_usd) + '.</p>';
     h += '<h3>Seven steps to farm it</h3><ol>';
     row.farm_steps.forEach(function (s, i) {
       h += '<li><b>Step ' + (i + 1) + '.</b> ' + esc(s) + '</li>';

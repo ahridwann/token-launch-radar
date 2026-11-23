@@ -1,4 +1,4 @@
-// Token Radar (radar-4): the entrypoint for make.fun's token-radar-01 bounty.
+// Token Radar (radar-6): the entrypoint for make.fun's token-radar-01 bounty.
 //
 // Reads the sealed snapshot from /input/snapshot.json (or --input <file|dir>), scores every
 // pre-token protocol with the model in lib/model.ts, writes the ranked board to
@@ -88,5 +88,6 @@ writeFileSync(
 
 process.stdout.write(
   `token radar: ${snapshot.protocols.length} protocols, ${snapshot.watchlist.length} on the watchlist, ${board.length} rows scored (${radar.early_size} beyond the watchlist, ${radar.live_size} live set aside)\n` +
+    `token radar: model ${radar.model_version}, ${radar.fit.comps_n} comps, R² ${radar.fit.r_squared.toFixed(3)}, leave-one-out median ×${radar.fit.loo_median_factor.toFixed(3)}, ${Math.round(radar.fit.loo_within_2x * 100)}% within 2×\n` +
     `token radar: wrote ${join(out, 'board.json')}, ${join(out, 'data.js')}, ${join(out, 'dashboard')} (${dash.length} files), ${join(out, 'screenshots')} (${shots.length} images) and ${join(out, 'dossier.json')}\n`,
 );

@@ -9,13 +9,14 @@
 <body>
 <header class="top">
   <div class="wrap">
-    <p class="kicker">Token Radar · model radar-4</p>
+    <p class="kicker">Token Radar · model radar-6</p>
     <h1>Which launch is worth farming next?</h1>
     <p class="lede">Every protocol below records no token yet. Each is ranked by what its token would be
-    worth if its record stayed as it is — priced by a size curve fitted to the snapshot's own
+    worth if its record stayed as it is — priced by a robust curve fitted to the snapshot's own
     traded protocols, not by a hand-picked multiple: the curve, its category offsets and its
     leave-one-out error band are all computed from the snapshot at run time. Click any row
     for the model maths, the backtest band, the netted farm cost and the seven steps to farm it.</p>
+    <p class="formula" id="formula">Loading the fitted curve…</p>
     <p class="meta" id="meta">Loading the snapshot…</p>
     <div class="stats" id="stats"></div>
   </div>
@@ -53,30 +54,39 @@
   </section>
   <section class="method">
     <h2>How the radar works</h2>
-    <p><strong>Implied value — a curve fitted to the snapshot's own traded protocols.</strong>
-    The model fits log market cap = a + b·log TVL + g·growth + y·age by least squares over the
-    traded protocols in this snapshot, excluding exchange tokens, bridges, liquid-staking and
-    wrapped products, stablecoin products and anchored BTC (the same products the watchlist
-    rule excludes), and excluding market-cap-to-TVL ratios outside 0.01–10× as data errors.
-    On this snapshot that is 78 comps. The fitted slope on log TVL is below 1, so implied
-    value grows slower than TVL: a protocol ten times as big is worth roughly four to five
-    times as much, not ten. Growth is the seven-day TVL change clamped to −50…+150% (null
-    counts as 0), then winsorized to the range the comps cover — about −40% to +3% on this
-    snapshot — and age is years since listing (unknown counts as 1), winsorized the same
-    way: the curve never extrapolates a hot week or a long life beyond anything a traded
-    protocol did, so one +4,448% week cannot multiply a small protocol's value by eight.
-    Both terms are fitted, and both come out small per point — the comps pay almost no
-    premium for a hot week or a long life, and their fitted signs flip across comp sets —
-    so ordinary weeks move a row little. Each category then gets a shrunk offset (n/(n+8)) from its comps' mean residual: what its traded
-    protocols actually trade at, not a fee-capture guess. No name is ever special-cased and
-    no coefficient is hardcoded: the same code fits any snapshot the house seals, and each
+    <p><strong>Implied value — a robust curve fitted to the snapshot's own traded protocols.</strong>
+    The model fits log market cap = a + b·log TVL + g·growth + c·log chains by Huber-robust least
+    squares (k = 1.345, iterated to convergence) over the traded protocols in this snapshot,
+    excluding exchange tokens, bridges, liquid-staking and wrapped products, stablecoin
+    products and anchored BTC (the same products the watchlist rule excludes), and excluding
+    market-cap-to-TVL ratios outside 0.01–10× as data errors. On this snapshot that is 78 comps.
+    A comp whose residual is an outlier is downweighted instead of bending the curve, so one
+    weird protocol cannot set the price of the whole board. The fitted slope on log TVL is
+    below 1, so implied value grows slower than TVL: a protocol ten times as big is worth
+    roughly four times as much, not ten. The chain term is negative — holding TVL fixed, a
+    protocol spread over twice as many chains trades at about 0.81× the value, and the slope
+    holds when the seven comps on more than ten chains are left out entirely, so it is not a
+    few multi-chain giants bending it. Growth is the seven-day TVL change clamped to −50…+150%
+    (null counts as 0), then winsorized to the range the comps cover — about −40% to +3% on this
+    snapshot — and log chains is winsorized to the comps' chain range the same way: the curve
+    never extrapolates a hot week or a wide spread beyond anything a traded protocol did.
+    Each category then gets a shrunk offset (n/(n+20)) from its comps' mean residual: what its
+    traded protocols actually trade at, not a fee-capture guess. No name is ever special-cased
+    and no coefficient is hardcoded: the same code fits any snapshot the house seals, and each
     detail view recomputes its row from the fitted coefficients.</p>
+    <p><strong>Age was tested — and dropped.</strong> The previous model priced age, but its fitted
+    slope flipped sign across comp sets, and dropping it improved every leave-one-out number:
+    the median factor from ×1.82 to ×1.75, the share inside 2× from 30.8% to 42.3%, the log RMSE
+    from 1.537 to 1.519. Age is still shown on every row and still sets the farm plan's hold
+    time — a young protocol needs longer on record — it just does not price the token, because
+    the traded protocols say it does not. Every candidate change in this model was tried the
+    same honest way and kept only when it improved all three backtest numbers.</p>
     <p><strong>The band is what the backtest earns.</strong> Every comp is priced again by a fit
-    that never saw it (leave-one-out, coefficients and category offsets both refitted). Half
-    the comps land within about ×1.8 of their real market cap and about a third within 2×;
-    the fit's R² is near 0.3. That is the honest size of the signal in this snapshot, and
-    each row carries its band: implied value ×/÷ the leave-one-out median factor. A wide
-    band is not a failure of the board — it is the measurement, shown next to the number.</p>
+    that never saw it (leave-one-out, winsor bounds, robust fit and category offsets all
+    refitted). About 42% of the comps land within 2× of their real market cap and half within
+    about ×1.75; the fit's R² is near 0.33. That is the honest size of the signal in this
+    snapshot, and each row carries its band: implied value ×/÷ the leave-one-out median factor.
+    A wide band is not a failure of the board — it is the measurement, shown next to the number.</p>
     <p><strong>Netted farm plans.</strong> Each plan is generated from the protocol's own category,
     chains, TVL, age and seven-day trend: the capital, the hold time and the weekly cadence
     follow those figures, the first step names its primary chain and TVL tier, a growing row

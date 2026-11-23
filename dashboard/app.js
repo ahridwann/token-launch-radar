@@ -55,18 +55,20 @@
   // The model in one function: the page recomputes a row from the fitted curve in
   // DATA.fit and checks the number board.json carries, so the page's code and the
   // board's data agree. No coefficient lives in this file: the fit rode in data.js.
+  // The price uses log TVL, growth and log chain count; age is shown on the row but
+  // does not price it — the backtest dropped age, and the method section says why.
   function impliedOf(row) {
     var f = DATA.fit;
     var growth = Math.min(f.growth_max, Math.max(f.growth_min, Math.min(150, Math.max(-50, row.change_7d === null ? 0 : row.change_7d))));
-    var ageYears = row.age_days === null ? 1 : row.age_days / 365.25;
-    ageYears = Math.min(f.age_max_years, Math.max(f.age_min_years, ageYears));
+    var chainsLog = Math.min(f.chains_max_log, Math.max(f.chains_min_log, Math.log(Math.max(1, row.chains.length))));
     var growthEffect = f.growth_per_point * growth;
-    var ageEffect = f.age_per_year * ageYears;
+    var chainsEffect = f.chains_per_log * chainsLog;
     var categoryOffset = (f.category_offsets && f.category_offsets[row.category || '']) || 0;
-    var logValue = f.intercept + f.tvl_slope * Math.log(row.tvl_usd) + growthEffect + ageEffect + categoryOffset;
+    var logValue = f.intercept + f.tvl_slope * Math.log(row.tvl_usd) + growthEffect + chainsEffect + categoryOffset;
     var value = Math.max(1, Math.round(Math.exp(logValue)));
     return { value: value, low: Math.max(1, Math.round(value / f.loo_median_factor)), high: Math.round(value * f.loo_median_factor),
-      growth: growth, growthEffect: growthEffect, ageYears: ageYears, ageEffect: ageEffect, categoryOffset: categoryOffset };
+      growth: growth, growthEffect: growthEffect, chainsCount: row.chains.length, chainsLog: chainsLog,
+      chainsEffect: chainsEffect, categoryOffset: categoryOffset };
   }
 
   function el(tag, cls, text) {
@@ -76,14 +78,21 @@
     return n;
   }
 
-  // Header stats and the category list, both straight from the data.
+  // Header stats, the fitted formula and the category list, all straight from the data.
   var wl = DATA.rows.filter(function (r) { return r.scope === 'watchlist'; }).length;
+  var f = DATA.fit;
+  $('formula').textContent = 'Fitted curve, ' + f.comps_n + ' traded comps: log value = ' +
+    f.intercept.toFixed(2) + ' + ' + f.tvl_slope.toFixed(2) + '·log TVL + ' +
+    f.growth_per_point.toFixed(3) + '·growth ' + f.chains_per_log.toFixed(2) + '·log chains' +
+    ' (Huber-robust, k = ' + f.huber_k + ', ' + f.huber_iterations + ' rounds) — age tested and dropped by the backtest.';
   $('meta').textContent = 'Snapshot ' + DATA.as_of + ' · ' + DATA.rows.length + ' pre-token protocols ranked · ' +
     wl + ' on the watchlist · ' + DATA.live.length + ' live tokens set aside · model ' + DATA.model_version;
   var stats = $('stats');
   [['board rows', DATA.rows.length], ['watchlist covered', wl + ' / ' + DATA.watchlist_size],
    ['early finds', DATA.early_size], ['comps fitted', DATA.fit.comps_n],
    ['leave-one-out median error', '×' + DATA.fit.loo_median_factor.toFixed(2)],
+   ['comps inside 2×', Math.round(DATA.fit.loo_within_2x * 100) + '%'],
+   ['fit R²', DATA.fit.r_squared.toFixed(2)],
    ['top implied value', usdShort(DATA.rows[0].implied_value_usd)]].forEach(function (s) {
     var d = el('div', 'stat');
     d.appendChild(el('b', null, String(s[1])));
@@ -229,13 +238,14 @@
       '<div class="cell"><b>' + fmtAge(row.age_days) + '</b><span>Age with no token</span></div></div>';
     h += '<p class="note"><strong>Records no token.</strong> The snapshot carries no market cap, no CoinGecko id and no symbol for ' +
       esc(row.name) + ' — the record, not proof that it has none. Its launch is not predicted here, only valued.</p>';
-    h += '<h3>How the value is worked out</h3><p>Fitted curve over ' + DATA.fit.comps_n + ' traded comps: ' +
+    h += '<h3>How the value is worked out</h3><p>Robust curve over ' + DATA.fit.comps_n + ' traded comps: ' +
       'log value = ' + DATA.fit.intercept.toFixed(2) + ' + ' + DATA.fit.tvl_slope.toFixed(2) + '·log TVL (' + usdShort(row.tvl_usd) + ')' +
       ' + ' + calc.growthEffect.toFixed(2) + ' growth (7d ' + fmtPct(calc.growth) + (row.change_7d !== null && row.change_7d !== calc.growth ? ', winsorized from ' + fmtPct(row.change_7d) : '') + ')' +
-      ' + ' + calc.ageEffect.toFixed(2) + ' age (' + fmtAge(row.age_days) + ')' +
+      ' + ' + calc.chainsEffect.toFixed(2) + ' chains (' + calc.chainsCount + (calc.chainsCount === 1 ? ' chain' : ' chains') + ')' +
       ' + ' + calc.categoryOffset.toFixed(2) + ' category (' + esc(row.category || 'no category') + ', shrunk offset)' +
       ' = <b>' + usdFull.format(calc.value) + '</b>, which ' + match + '. The band is ' + usdShort(calc.low) + '–' + usdShort(calc.high) +
-      ': the value ×/÷ the leave-one-out median factor ×' + DATA.fit.loo_median_factor.toFixed(2) + '.</p>';
+      ': the value ×/÷ the leave-one-out median factor ×' + DATA.fit.loo_median_factor.toFixed(2) + '. Age (' + fmtAge(row.age_days) +
+      ') does not enter the price: the backtest tested it and dropped it — its slope flipped sign across comp sets — but it still sets this plan’s hold time.</p>';
     h += '<p><strong>Netted.</strong> This plan costs $' + row.plan_capital_usd + ' of capital and about $' + row.plan_gas_usd +
       ' of gas. The capital is a deposit that comes back on exit, so the true cost is the gas: about $' + row.plan_gas_usd +
       ' against the low end of the band, ' + usdFull.format(row.implied_low_usd) + '.</p>';

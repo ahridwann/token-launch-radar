@@ -26,6 +26,11 @@ body {
 .kicker { margin: 0 0 6px; color: #8fd0c2; font-size: 12px; letter-spacing: 2px; text-transform: uppercase; font-weight: 700; }
 .top h1 { margin: 0 0 10px; font-size: 30px; line-height: 1.15; letter-spacing: -0.5px; }
 .lede { margin: 0 0 12px; max-width: 760px; color: #d8d3c4; font-size: 16px; }
+.formula {
+  margin: 0 0 12px; max-width: 860px; color: #f6f3ec; font-size: 14px;
+  background: #2a3347; border: 1px solid #3d4a63; border-radius: 6px; padding: 9px 12px;
+  font-variant-numeric: tabular-nums;
+}
 .meta { margin: 0 0 14px; color: #a9a48f; font-size: 13px; }
 .stats { display: flex; flex-wrap: wrap; gap: 8px; }
 .stat { background: #2a3347; border: 1px solid #3d4a63; border-radius: 6px; padding: 8px 12px; font-size: 13px; }
@@ -57,7 +62,7 @@ body {
    aside, and the protocol's detail fills the first screen. */
 .detail-open .top { padding: 14px 0 12px; }
 .detail-open .top h1 { font-size: 22px; margin: 0; }
-.detail-open .lede, .detail-open .meta, .detail-open .stats, .detail-open .method { display: none; }
+.detail-open .lede, .detail-open .meta, .detail-open .stats, .detail-open .formula, .detail-open .method { display: none; }
 .detail h2 { margin: 0 0 2px; font-size: 22px; }
 .detail .sub { margin: 0 0 12px; color: var(--muted); font-size: 14px; }
 .detail .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 0 0 14px; }

@@ -13,98 +13,54 @@ hand-kept list of names.
 
 ## How it works
 
-The model is a curve fitted to the snapshot's own traded protocols, never a
-hand-picked multiple:
+The model is an ensemble of three robust curves fitted to the snapshot's own
+traded protocols, never a hand-picked multiple:
 
-- **Robust fit.** log market cap = a + b·log TVL + g·growth + c·log chains, fitted
-  by Huber-robust least squares (k = 1.345, iterated to convergence) over 78 traded
-  comps. A comp whose residual is an outlier is downweighted instead of bending the
-  curve, so one weird protocol cannot set the price of the whole board.
-- **The fitted curve on this snapshot:** log value = 6.51 + 0.58·log TVL +
-  0.020·growth − 0.31·log chains. The chain term is negative: holding TVL fixed, a
-  protocol spread over twice as many chains trades at about 0.81× the value — and
-  the slope holds when the seven comps on more than ten chains are left out entirely.
-- **Age was tested — and dropped.** The previous model priced age, but its fitted
-  slope flipped sign across comp sets, and dropping it improved every backtest
-  number: the leave-one-out median factor from ×1.82 to ×1.75, the share of comps
-  inside 2× from 30.8% to 42.3%, the log RMSE from 1.537 to 1.519. Age is still
-  shown on every row and still sets the farm plan's hold time — it just does not
-  price the token, because the traded protocols say it does not.
-- **Category offsets, shrunk.** Each category gets an offset of n/(n+20) from its
-  comps' mean residual, for categories with at least three comps: what its traded
-  protocols actually trade at, not a fee-capture guess.
-- **Winsorized inputs.** Growth is clamped to −50…+150% (null counts as 0), then
-  winsorized to the range the comps cover; log chain count is winsorized to the
-  comps' chain range the same way. The curve never extrapolates a hot week or a
-  wide spread beyond anything a traded protocol did. Log TVL is never winsorized.
-- **Honest band.** Every comp is priced again by a fit that never saw it
-  (leave-one-out, with bounds, robust fit and offsets all refitted). About 42% of
-  the comps land within 2× of their real market cap and half within about ×1.75;
-  the fit's R² is 0.33. Each row carries its band — implied value ×/÷ the
-  leave-one-out median factor — next to the number.
+- **Three Huber-robust fits.** Each member fits log market cap on log TVL, growth
+  and log chains (k = 1.345, iterated to convergence) over 78 traded comps. The
+  members differ in one thing each: raw growth, growth through a signed log, and
+  a TVL-curvature term. The board takes the mean of the three log predictions.
+- **Category offsets.** Each category gets a shrunk offset (n/(n+20)) from its
+  comps' mean residual, per member: what its traded protocols actually trade at,
+  not a fee-capture guess.
+- **Honest backtest.** Every comp is priced by an ensemble that never saw it
+  (leave-one-out, bounds, fits and offsets all refitted). On this snapshot the
+  ensemble prices at a median factor of ×1.715, with 43.6% of comps inside 2×,
+  a log RMSE of 1.517 and R² of 0.331 — better than the previous single-fit model
+  (radar-6: ×1.748, 42.3%, 1.519, 0.328) on every backtest number. The gain is
+  small, and the dashboard says so: the signal in this snapshot is weak, and
+  averaging three honest fits trims the noise instead of inventing a stronger one.
+- **Age was tested — and dropped.** Its fitted slope flipped sign across comp
+  sets, and dropping it improved every backtest number. Age is still shown on
+  every row and still sets the farm plan's hold time.
+- **What was rejected.** Adding the excluded products back (111 comps) lifts R²
+  to 0.446 but wrecks the backtest (median ×1.84, 32.4% inside 2×). A median (L1)
+  fit alone reaches log RMSE 1.504 but its median factor is ×1.82.
 
-## The board on this snapshot
-
-- **197 rows ranked:** the 40-protocol watchlist, 19 more above the $50M floor the
-  watchlist leaves out, and 138 early finds below the floor. 24 live tokens are set
-  aside in their own tab, at the market's own value, never mixed into the ranking.
-- **Top of the board:** sentora-curator at about $124.5M implied, then
-  steakhouse-financial ($82.8M), usdd ($70.7M), gauntlet ($61.5M) and
-  bittensor-dtao ($53.3M).
-- **Netted farm plans.** Each of the 197 rows gets seven steps generated from its
-  own category, chains, TVL, age and seven-day trend: the capital, the hold time
-  and the weekly cadence follow those figures, a growing row gets scale-in advice
-  while a shrinking one gets a smaller first deposit until the trend flattens, and
-  every step states what it costs and how long it takes. The capital is a deposit
-  that comes back on exit, so the detail view nets it: the true cost is the gas,
-  shown against the low end of the row's backtest band.
-
-## The dashboard
-
-Open `dashboard/index.html` (with `data.js` beside it) in a browser. No network:
-every byte it shows is in `data.js`, and it fetches nothing. Search by name or
-slug, filter by category and scope, sort by implied value, TVL, 7-day change, age
-or name, page through 25 rows at a time, switch to the Live tokens tab, or click
-any row for the model maths, the backtest band, the netted farm cost and the seven
-steps to farm it. The address hash deep-links a view
-(`#/detail/sentora-curator`, `#/scope/early`, `#/cat/Yield Aggregator`).
+Each row carries a seven-step farm plan generated from its own category, chains,
+TVL, age and seven-day trend, with the cost and time of every step, and the
+detail view nets the plan: the capital is a deposit that comes back on exit, so
+the true cost is the gas.
 
 ## Run it
 
 ```sh
-# With the sealed snapshot mounted at /input (the grader's container):
-node main.ts
-
-# Outside it, point at a snapshot file or directory:
-mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts --input path/to/snapshot.json
+mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts --input <path to snapshot.json>
 ```
 
-Node 22, standard library only. Deterministic: the same snapshot bytes always
-write the same output bytes. The run writes `board.json` (the ranked board),
-`data.js` (the dashboard's data), `dashboard/` (the page), `screenshots/` (three
-views of the board) and `dossier.json` (built with the vendored make.fun library).
+That writes `board.json`, `data.js`, `dashboard/`, `screenshots/` and
+`dossier.json` into `out/`. Open `out/dashboard/index.html` in a browser (it
+renders with no network). The program is deterministic: the same snapshot bytes
+always write the same output bytes.
 
-## Verify it
+## Layout
 
-```sh
-# Two runs write byte-identical output:
-MAKEFUN_OUTPUT_DIR=/tmp/r6a node main.ts --input <snapshot>
-MAKEFUN_OUTPUT_DIR=/tmp/r6b node main.ts --input <snapshot>
-diff -r /tmp/r6a /tmp/r6b
-```
-
-An independent Python reference recomputes the whole pipeline — the robust fit,
-the leave-one-out backtest, every row's implied value and band, every plan cost
-and every farm step — from the snapshot alone and compares it against
-`board.json` field by field.
-
-## What this is not
-
-Nothing here is financial advice, and a launch is never promised. “Records no
-token” means the snapshot's record carries no market cap, no CoinGecko id and no
-symbol for the protocol — the record, not proof that it has none.
+- `main.ts` — entrypoint: reads the snapshot, writes the board, data and dossier.
+- `lib/model.ts` — the radar-7 ensemble, the board builder and the farm plans.
+- `dashboard/` — the page: board, filters, detail view and live-token tab.
+- `vendor/makefun-board.ts` — the kit's dossier library, byte-for-byte.
+- `screenshots/` — the board, a detail view and a filtered view.
 
 ---
 
-Built for the [token-radar-01 bounty](https://make.fun/bounty/token-radar-01) on
-make.fun. Referral code: `kc98nxwf`.
+Referral code: `kc98nxwf`

@@ -1,9 +1,10 @@
-// Token Radar (radar-6): the entrypoint for make.fun's token-radar-01 bounty.
+// Token Radar (radar-7): the entrypoint for make.fun's token-radar-01 bounty.
 //
 // Reads the sealed snapshot from /input/snapshot.json (or --input <file|dir>), scores every
-// pre-token protocol with the model in lib/model.ts, writes the ranked board to
-// /output/board.json, writes the dashboard's data to /output/data.js, copies dashboard/ and
-// screenshots/ to /output, and writes /output/dossier.json with the vendored make.fun library.
+// pre-token protocol with the three-member Huber ensemble in lib/model.ts, writes the ranked
+// board to /output/board.json, writes the dashboard's data to /output/data.js, copies
+// dashboard/ and screenshots/ to /output, and writes /output/dossier.json with the vendored
+// make.fun library.
 //
 // The program is deterministic: the same snapshot bytes always write the same output bytes,
 // so the grader's two runs agree. It runs on Node 22 with the standard library only.
@@ -88,6 +89,6 @@ writeFileSync(
 
 process.stdout.write(
   `token radar: ${snapshot.protocols.length} protocols, ${snapshot.watchlist.length} on the watchlist, ${board.length} rows scored (${radar.early_size} beyond the watchlist, ${radar.live_size} live set aside)\n` +
-    `token radar: model ${radar.model_version}, ${radar.fit.comps_n} comps, R² ${radar.fit.r_squared.toFixed(3)}, leave-one-out median ×${radar.fit.loo_median_factor.toFixed(3)}, ${Math.round(radar.fit.loo_within_2x * 100)}% within 2×\n` +
+    `token radar: model ${radar.model_version}, ${radar.fit.comps_n} comps, R² ${radar.fit.r_squared.toFixed(3)}, leave-one-out median ×${radar.fit.loo_median_factor.toFixed(3)}, ${Math.round(radar.fit.loo_within_2x * 100)}% within 2×, log RMSE ${radar.fit.loo_log_rmse.toFixed(3)}\n` +
     `token radar: wrote ${join(out, 'board.json')}, ${join(out, 'data.js')}, ${join(out, 'dashboard')} (${dash.length} files), ${join(out, 'screenshots')} (${shots.length} images) and ${join(out, 'dossier.json')}\n`,
 );

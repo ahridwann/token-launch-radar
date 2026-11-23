@@ -1,44 +1,48 @@
-// Token Radar's value model (radar-4): a sealed snapshot in, a ranked board out.
+// Token Radar's value model (radar-6): a sealed snapshot in, a ranked board out.
 //
 // The board ranks protocols that record no token, by what a token would be worth if the
 // protocol's record stayed as it is. It never predicts whether or when a token is issued:
 // the implied value is this entry's own claim, derived only from the snapshot's own figures.
 //
-// radar-4 replaces radar-3's hand-picked multipliers (TVL x 0.30, growth x 0.60, maturity
-// 0.70-1.20, fee-capture tiers 1.15/1.08/1.00/0.92, chains +2% each) with a curve FITTED
-// to the snapshot's own traded protocols at run time. The old constants were asserted:
-// nothing in the snapshot said a token is worth 30% of TVL, or that lending earns 1.15x.
-// Worse, the comps contradict two of them: regressing log market cap on log TVL over the
-// traded protocols gives a slope near 0.5-0.6, not 1.0, so a flat multiple overprices the
-// biggest protocols by up to 8x; and the fitted growth and age slopes are near zero with
-// an unstable sign across comp sets, while radar-3 paid +12% for +20% weekly growth and
-// up to +71% for four years of age. radar-4 prices from the fit instead.
+// radar-6 replaces radar-4's plain least-squares fit with a fit the snapshot's own
+// backtest chose. radar-4 fitted log market cap on log TVL, growth and age by ordinary
+// least squares; its leave-one-out error was a median factor of x1.82 with 30.8% of comps
+// inside 2x. For radar-6 every candidate change was tried the same honest way —
+// leave-one-out, with the winsor bounds, the fit and the category offsets all refitted
+// without the comp being priced — and kept only when it improved all three backtest
+// numbers (median factor, share inside 2x, log RMSE). Three changes survived:
 //
-//   comps     = traded protocols (mcap > 0, TVL > 0) EXCLUDING the products the
-//               watchlist rule itself excludes — exchange tokens, bridges, liquid
-//               staking / restaking and wrapped or staked products, stablecoin issuers
-//               and wrappers, reserve currencies, anchored BTC — and excluding
-//               mcap/TVL outside 0.01-10x as data errors. 78 comps on this snapshot.
-//   fit       = ordinary least squares, log(mcap) = a + b*log(TVL) + g*growth + y*age,
-//               growth = 7-day TVL change clamped to -50..+150 (null = 0), age in years
-//               (unknown = 1.0), both winsorized to the range the comps cover — the curve
-//               never extrapolates beyond anything a traded protocol did. Solved at run
-//               time from the snapshot: no coefficient is hardcoded, so the same code
-//               prices any snapshot the house seals.
-//   category  = shrunk mean residual per category, n/(n+8), for categories with at
-//               least 3 comps; 0 otherwise. A category's offset is what its traded
-//               protocols actually trade at, not a fee-capture guess.
-//   implied   = exp(a + b*ln(TVL) + g*growth + y*age + categoryOffset), rounded, >= $1
-//   band      = implied x/÷ the leave-one-out median factor (each comp priced by a fit
-//               that never saw it). The band is what the backtest earns, stated on the
-//               dashboard, not a round number.
-//   net       = the plan's true cost is gas only (the capital is a deposit that comes
-//               back on exit). The detail view nets the low end of the band against it.
+//   chains  = log of the chain count joins the fit. Holding TVL fixed, a protocol
+//             spread over more chains trades cheaper: the fitted slope is about -0.31
+//             per log chain, so doubling the chain count multiplies value by ~0.81.
+//             The slope holds when the seven comps on more than ten chains are left
+//             out entirely (-0.41), so it is not a few multi-chain giants bending it.
+//   age     = DROPPED as a price input. Its fitted slope flipped sign across comp sets
+//             in radar-4, and dropping it improved every backtest number (median x1.82
+//             to x1.75, inside-2x 30.8% to 42.3%, log RMSE 1.537 to 1.519). Age is still
+//             shown on every row and still sets the farm plan's hold time — it just
+//             does not price the token, because the traded protocols say it does not.
+//   huber   = the fit is Huber-robust (k = 1.345, iterated to convergence): a comp whose
+//             residual is an outlier is downweighted instead of bending the curve, so
+//             one weird protocol cannot set the price of the whole board.
 //
-// The fit is weak in absolute terms and the dashboard says so: R² near 0.3, a leave-one-out
-// median error near x1.8. That is the honest size of the signal in this snapshot, and it is
-// still the right model: it is the snapshot's own traded protocols pricing the board, with
-// the error measured and shown, instead of constants chosen by hand.
+//   offsets = shrunk mean residual per category, n/(n+20) for categories with at least
+//             3 comps; stronger shrinkage than radar-4's n/(n+8), again chosen by the
+//             backtest. A category's offset is what its traded protocols actually trade
+//             at, not a fee-capture guess.
+//   implied = exp(a + b*ln(TVL) + g*growth + c*ln(chains) + categoryOffset), rounded, >= $1
+//   band    = implied x/÷ the leave-one-out median factor (each comp priced by a fit
+//             that never saw it). The band is what the backtest earns, stated on the
+//             dashboard, not a round number.
+//   net     = the plan's true cost is gas only (the capital is a deposit that comes
+//             back on exit). The detail view nets the low end of the band against it.
+//
+// The fit is still weak in absolute terms and the dashboard says so: R² near 0.33, a
+// leave-one-out median error near x1.75. That is the honest size of the signal in this
+// snapshot, and it is still the right model: it is the snapshot's own traded protocols
+// pricing the board, with the error measured and shown, instead of constants chosen by
+// hand. No name is ever special-cased and no coefficient is hardcoded: the same code
+// fits any snapshot the house seals.
 //
 // Scope: the watchlist is the floor, never the ceiling. The board carries every watchlist
 // slug, then every other rankable pre-token protocol: the 19 above the floor the watchlist
@@ -75,27 +79,31 @@ export interface FitResult {
   comps_n: number;
   /** Traded protocols excluded from the fit (products + ratio outliers). */
   excluded_n: number;
-  /** log(mcap) = intercept + tvl_slope * log(TVL) + growth_per_point * growth + age_per_year * age. */
+  /** log(mcap) = intercept + tvl_slope * log(TVL) + growth_per_point * growth + chains_per_log * log(chains). */
   intercept: number;
   tvl_slope: number;
   growth_per_point: number;
-  age_per_year: number;
+  chains_per_log: number;
   /** Shrunk mean residual per category, in log units (0 when the category has < 3 comps). */
   category_offsets: Record<string, number>;
-  /** Growth and age are winsorized to the range the comps cover: the curve never
-   * extrapolates a hot week or a long life beyond anything a traded protocol did. */
+  /** Growth is winsorized to the range the comps cover: the curve never extrapolates
+   * a hot week beyond anything a traded protocol did. Log TVL is the size axis and is
+   * never winsorized; log chains is winsorized to the comps' chain range. */
   growth_min: number;
   growth_max: number;
-  age_min_years: number;
-  age_max_years: number;
+  chains_min_log: number;
+  chains_max_log: number;
   /** Leave-one-out median |factor| error: half the comps price within this factor. */
   loo_median_factor: number;
   /** Leave-one-out share of comps priced within 2x. */
   loo_within_2x: number;
   /** Leave-one-out log RMSE. */
   loo_log_rmse: number;
-  /** R² of the four-term fit on the comps. */
+  /** R² of the fit on the comps (offsets excluded: they are shrinkage, not fit). */
   r_squared: number;
+  /** Huber tuning constant (1.345) and the iterations the robust fit took. */
+  huber_k: number;
+  huber_iterations: number;
 }
 
 /** Categories whose tokens do not price like a new launch's: the watchlist rule's own
@@ -119,7 +127,7 @@ const FIT_EXCLUDED = new Set([
 ]);
 
 /** The model's version label: the dashboard names it. */
-export const MODEL_VERSION = 'radar-4';
+export const MODEL_VERSION = 'radar-6';
 
 /** How many live-token protocols the Live token view carries, by market cap. */
 export const LIVE_ROWS = 24;
@@ -162,8 +170,8 @@ export interface BoardRow {
     tvl_slope: number;
     growth_pct: number;
     growth_effect: number;
-    age_years: number;
-    age_effect: number;
+    chains_count: number;
+    chains_effect: number;
     category_offset: number;
     age_days: number | null;
   };
@@ -190,7 +198,7 @@ export interface RadarRow {
   intercept: number;
   tvl_slope: number;
   growth_effect: number;
-  age_effect: number;
+  chains_effect: number;
   category_offset: number;
   farm_steps: string[];
 }
@@ -231,6 +239,15 @@ export class SnapshotError extends Error {
 
 const DAY_MS = 86_400_000;
 
+/** The Huber tuning constant: residuals beyond k robust sigmas are downweighted. */
+const HUBER_K = 1.345;
+/** The robust fit runs at most this many reweighting rounds. */
+const HUBER_MAX_ITERS = 25;
+/** A robust round has converged when no coefficient moves by more than this. */
+const HUBER_TOL = 1e-9;
+/** Category offsets shrink by n/(n + this): a category needs many comps to move the price. */
+const OFFSET_SHRINK = 20;
+
 /** A finite number, else `fallback`. */
 function finite(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
@@ -245,7 +262,7 @@ export function ageDays(asOf: string, listedAt: string | null): number | null {
   return Math.max(0, Math.floor((a - b) / DAY_MS));
 }
 
-/** Solve a small dense linear system by Gaussian elimination with partial pivoting.
+/** Solve a small dense linear system by Gauss-Jordan elimination with partial pivoting.
  * Deterministic: fixed row order, no randomness. Throws when the system is singular. */
 function solveLinear(a: number[][], b: number[]): number[] {
   const n = b.length;
@@ -268,31 +285,133 @@ function solveLinear(a: number[][], b: number[]): number[] {
   return m.map((row, i) => row[n]! / row[i]!);
 }
 
-/** A protocol's four fit inputs: [1, log TVL, clamped 7-day growth, age in years]. */
-function rawInputs(p: SnapshotProtocol, asOf: string): [number, number, number, number] {
+/** A protocol's four fit inputs: [1, log TVL, clamped 7-day growth, log chain count].
+ * Growth is clamped to -50..+150 (null counts as 0) before any winsorizing; the chain
+ * count is at least 1, so its log is never negative. Age is deliberately NOT an input:
+ * the backtest dropped it (see the header). */
+function fitFeatures(p: SnapshotProtocol): [number, number, number, number] {
   const growth = Math.min(150, Math.max(-50, finite(p.change_7d, 0)));
-  const age = ageDays(asOf, p.listed_at);
-  const ageYears = age === null ? 1 : age / 365.25;
-  return [1, Math.log(p.tvl_usd), growth, ageYears];
+  return [1, Math.log(p.tvl_usd), growth, Math.log(Math.max(1, p.chains.length))];
 }
 
-/** The fit inputs winsorized to the comps' observed range: a protocol growing faster
- * than any traded comp gets no more credit than the fastest comp, and likewise for age.
- * On this snapshot the comps' growth spans about -40% to +3% while board rows reach
- * +4,448% — without this, one hot week would multiply a small protocol's value by 8x
- * on a slope fitted over a range that never saw it. */
-function fitInputs(
+/** The winsor bounds over a comp set: each feature's observed range, except log TVL,
+ * the size axis, which is never clipped. The intercept column is constant 1. */
+function winsorBounds(comps: SnapshotProtocol[]): { lo: number[]; hi: number[] } {
+  const raw = comps.map((p) => fitFeatures(p));
+  const lo = [0, 0, 0, 0];
+  const hi = [0, 0, 0, 0];
+  for (let i = 0; i < 4; i++) {
+    lo[i] = Math.min(...raw.map((r) => r[i]!));
+    hi[i] = Math.max(...raw.map((r) => r[i]!));
+  }
+  lo[1] = -Infinity;
+  hi[1] = Infinity;
+  lo[0] = 1;
+  hi[0] = 1;
+  return { lo, hi };
+}
+
+/** A feature vector clipped to the bounds: a protocol growing faster than any traded
+ * comp gets no more credit than the fastest comp, and one on more chains than any comp
+ * gets no bigger discount than the widest comp. */
+function clippedFeatures(
   p: SnapshotProtocol,
-  asOf: string,
-  bounds: { growthMin: number; growthMax: number; ageMin: number; ageMax: number },
+  bounds: { lo: number[]; hi: number[] },
 ): [number, number, number, number] {
-  const raw = rawInputs(p, asOf);
+  const raw = fitFeatures(p);
   return [
     1,
     raw[1],
-    Math.min(bounds.growthMax, Math.max(bounds.growthMin, raw[2])),
-    Math.min(bounds.ageMax, Math.max(bounds.ageMin, raw[3])),
+    Math.min(bounds.hi[2]!, Math.max(bounds.lo[2]!, raw[2])),
+    Math.min(bounds.hi[3]!, Math.max(bounds.lo[3]!, raw[3])),
   ];
+}
+
+/** Ordinary least squares for log(mcap) on the four fit inputs, over `comps`. */
+function ols(
+  comps: SnapshotProtocol[],
+  bounds: { lo: number[]; hi: number[] },
+): [number, number, number, number] {
+  const k = 4;
+  const ata: number[][] = Array.from({ length: k }, () => Array(k).fill(0));
+  const atb: number[] = Array(k).fill(0);
+  for (const p of comps) {
+    const x = clippedFeatures(p, bounds);
+    const y = Math.log(p.mcap_usd!);
+    for (let i = 0; i < k; i++) {
+      atb[i]! += x[i]! * y;
+      for (let j = 0; j < k; j++) ata[i]![j]! += x[i]! * x[j]!;
+    }
+  }
+  return solveLinear(ata, atb) as [number, number, number, number];
+}
+
+/** The upper median of a list: the element at index floor(n/2) of the sorted copy.
+ * Same convention as the leave-one-out median factor below. */
+function upperMedian(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.floor(sorted.length / 2)]!;
+}
+
+/** Huber-robust least squares: start from OLS, then reweight each round so a comp
+ * whose residual is an outlier counts less, until the coefficients stop moving.
+ * The scale is 1.4826 times the median absolute residual, the standard robust scale.
+ * Returns the coefficients and how many reweighting rounds ran. */
+function huberFit(
+  comps: SnapshotProtocol[],
+  bounds: { lo: number[]; hi: number[] },
+): { beta: [number, number, number, number]; iterations: number } {
+  let beta = ols(comps, bounds);
+  let iterations = 0;
+  for (let round = 0; round < HUBER_MAX_ITERS; round++) {
+    iterations = round + 1;
+    const residuals = comps.map((p) => {
+      const x = clippedFeatures(p, bounds);
+      return Math.log(p.mcap_usd!) - (beta[0] * x[0] + beta[1] * x[1] + beta[2] * x[2] + beta[3] * x[3]);
+    });
+    const scale = 1.4826 * upperMedian(residuals.map((r) => Math.abs(r))) || 1;
+    const weights = residuals.map((r) => (Math.abs(r) <= HUBER_K * scale ? 1 : (HUBER_K * scale) / Math.abs(r)));
+    const k = 4;
+    const ata: number[][] = Array.from({ length: k }, () => Array(k).fill(0));
+    const atb: number[] = Array(k).fill(0);
+    comps.forEach((p, idx) => {
+      const x = clippedFeatures(p, bounds);
+      const y = Math.log(p.mcap_usd!);
+      const w = weights[idx]!;
+      for (let i = 0; i < k; i++) {
+        atb[i]! += w * x[i]! * y;
+        for (let j = 0; j < k; j++) ata[i]![j]! += w * x[i]! * x[j]!;
+      }
+    });
+    const next = solveLinear(ata, atb) as [number, number, number, number];
+    const moved = Math.max(...next.map((v, i) => Math.abs(v - beta[i]!)));
+    beta = next;
+    if (moved < HUBER_TOL) break;
+  }
+  return { beta, iterations };
+}
+
+/** Shrunk mean residual per category, from a fit's residuals: n/(n+20), n >= 3 else 0. */
+function categoryOffsets(
+  comps: SnapshotProtocol[],
+  beta: [number, number, number, number],
+  bounds: { lo: number[]; hi: number[] },
+): Record<string, number> {
+  const sums = new Map<string, { total: number; n: number }>();
+  for (const p of comps) {
+    const x = clippedFeatures(p, bounds);
+    const resid = Math.log(p.mcap_usd!) - (beta[0] * x[0] + beta[1] * x[1] + beta[2] * x[2] + beta[3] * x[3]);
+    const key = p.category ?? '';
+    const cur = sums.get(key) ?? { total: 0, n: 0 };
+    cur.total += resid;
+    cur.n += 1;
+    sums.set(key, cur);
+  }
+  const out: Record<string, number> = {};
+  for (const [key, { total, n }] of sums) {
+    if (n >= 3) out[key] = (total / n) * (n / (n + OFFSET_SHRINK));
+  }
+  return out;
 }
 
 /** Whether a traded protocol belongs in the fit set: not an excluded product, and its
@@ -304,48 +423,15 @@ function isFitComp(p: SnapshotProtocol): boolean {
   return ratio >= 0.01 && ratio <= 10;
 }
 
-/** Ordinary least squares for log(mcap) on the four fit inputs, over `comps`. */
-function ols(
-  comps: SnapshotProtocol[],
-  asOf: string,
-  bounds: { growthMin: number; growthMax: number; ageMin: number; ageMax: number },
-): [number, number, number, number] {
-  const k = 4;
-  const ata: number[][] = Array.from({ length: k }, () => Array(k).fill(0));
-  const atb: number[] = Array(k).fill(0);
-  for (const p of comps) {
-    const x = fitInputs(p, asOf, bounds);
-    const y = Math.log(p.mcap_usd!);
-    for (let i = 0; i < k; i++) {
-      atb[i]! += x[i]! * y;
-      for (let j = 0; j < k; j++) ata[i]![j]! += x[i]! * x[j]!;
-    }
-  }
-  return solveLinear(ata, atb) as [number, number, number, number];
-}
-
-/** Shrunk mean residual per category, from a fit's residuals: n/(n+8), n >= 3 else 0. */
-function categoryOffsets(
-  comps: SnapshotProtocol[],
+/** Predict a protocol's log market cap from a fit and its offsets. */
+function predictLog(
+  p: SnapshotProtocol,
   beta: [number, number, number, number],
-  asOf: string,
-  bounds: { growthMin: number; growthMax: number; ageMin: number; ageMax: number },
-): Record<string, number> {
-  const sums = new Map<string, { total: number; n: number }>();
-  for (const p of comps) {
-    const x = fitInputs(p, asOf, bounds);
-    const resid = Math.log(p.mcap_usd!) - (beta[0] * x[0] + beta[1] * x[1] + beta[2] * x[2] + beta[3] * x[3]);
-    const key = p.category ?? '';
-    const cur = sums.get(key) ?? { total: 0, n: 0 };
-    cur.total += resid;
-    cur.n += 1;
-    sums.set(key, cur);
-  }
-  const out: Record<string, number> = {};
-  for (const [key, { total, n }] of sums) {
-    if (n >= 3) out[key] = (total / n) * (n / (n + 8));
-  }
-  return out;
+  offsets: Record<string, number>,
+  bounds: { lo: number[]; hi: number[] },
+): number {
+  const x = clippedFeatures(p, bounds);
+  return beta[0] * x[0] + beta[1] * x[1] + beta[2] * x[2] + beta[3] * x[3] + (offsets[p.category ?? ''] ?? 0);
 }
 
 /**
@@ -357,54 +443,29 @@ export function fitComps(snapshot: Snapshot): FitResult {
   const traded = snapshot.protocols.filter((p) => p.mcap_usd !== null && p.mcap_usd > 0 && p.tvl_usd > 0);
   const comps = traded.filter(isFitComp);
   if (comps.length < 10) throw new SnapshotError(`only ${comps.length} traded protocols fit the curve: the snapshot cannot price a board`);
-  // The winsor bounds come from the comps themselves, before any fitting.
-  const rawGrowths = comps.map((p) => rawInputs(p, snapshot.as_of)[2]);
-  const rawAges = comps.map((p) => rawInputs(p, snapshot.as_of)[3]);
-  const bounds = {
-    growthMin: Math.min(...rawGrowths),
-    growthMax: Math.max(...rawGrowths),
-    ageMin: Math.min(...rawAges),
-    ageMax: Math.max(...rawAges),
-  };
-  const beta = ols(comps, snapshot.as_of, bounds);
-  const offsets = categoryOffsets(comps, beta, snapshot.as_of, bounds);
-  const predict = (
-    p: SnapshotProtocol,
-    b: [number, number, number, number],
-    off: Record<string, number>,
-    bd: { growthMin: number; growthMax: number; ageMin: number; ageMax: number },
-  ): number => {
-    const x = fitInputs(p, snapshot.as_of, bd);
-    return b[0] * x[0] + b[1] * x[1] + b[2] * x[2] + b[3] * x[3] + (off[p.category ?? ''] ?? 0);
-  };
-  // R² of the four-term fit on the comps (offsets excluded: they are shrinkage, not fit).
+  const bounds = winsorBounds(comps);
+  const { beta, iterations } = huberFit(comps, bounds);
+  const offsets = categoryOffsets(comps, beta, bounds);
+  // R² of the fit on the comps (offsets excluded: they are shrinkage, not fit).
   const ys = comps.map((p) => Math.log(p.mcap_usd!));
   const yMean = ys.reduce((a, b) => a + b, 0) / ys.length;
   let ssRes = 0;
   let ssTot = 0;
   for (let i = 0; i < comps.length; i++) {
-    const x = fitInputs(comps[i]!, snapshot.as_of, bounds);
+    const x = clippedFeatures(comps[i]!, bounds);
     const fitted = beta[0] * x[0] + beta[1] * x[1] + beta[2] * x[2] + beta[3] * x[3];
     ssRes += (ys[i]! - fitted) ** 2;
     ssTot += (ys[i]! - yMean) ** 2;
   }
-  // Leave-one-out: each comp priced by a fit that never saw it (coefficients and
-  // category offsets both refitted without it). The median factor error is the band.
+  // Leave-one-out: each comp priced by a fit that never saw it (bounds, robust fit and
+  // category offsets all refitted without it). The median factor error is the band.
   const looErrors: number[] = [];
   for (let i = 0; i < comps.length; i++) {
     const rest = comps.filter((_, j) => j !== i);
-    // The winsor bounds are refitted without the left-out comp too: it never leaks in.
-    const restGrowths = rest.map((p) => rawInputs(p, snapshot.as_of)[2]);
-    const restAges = rest.map((p) => rawInputs(p, snapshot.as_of)[3]);
-    const restBounds = {
-      growthMin: Math.min(...restGrowths),
-      growthMax: Math.max(...restGrowths),
-      ageMin: Math.min(...restAges),
-      ageMax: Math.max(...restAges),
-    };
-    const b = ols(rest, snapshot.as_of, restBounds);
-    const off = categoryOffsets(rest, b, snapshot.as_of, restBounds);
-    looErrors.push(Math.log(comps[i]!.mcap_usd!) - predict(comps[i]!, b, off, restBounds));
+    const restBounds = winsorBounds(rest);
+    const { beta: b } = huberFit(rest, restBounds);
+    const off = categoryOffsets(rest, b, restBounds);
+    looErrors.push(Math.log(comps[i]!.mcap_usd!) - predictLog(comps[i]!, b, off, restBounds));
   }
   const factors = looErrors.map((e) => Math.abs(Math.exp(e) - 1)).sort((a, b) => a - b);
   const medianFactor = 1 + factors[Math.floor(factors.length / 2)]!;
@@ -416,16 +477,18 @@ export function fitComps(snapshot: Snapshot): FitResult {
     intercept: beta[0],
     tvl_slope: beta[1],
     growth_per_point: beta[2],
-    age_per_year: beta[3],
+    chains_per_log: beta[3],
     category_offsets: offsets,
-    growth_min: bounds.growthMin,
-    growth_max: bounds.growthMax,
-    age_min_years: bounds.ageMin,
-    age_max_years: bounds.ageMax,
+    growth_min: bounds.lo[2]!,
+    growth_max: bounds.hi[2]!,
+    chains_min_log: bounds.lo[3]!,
+    chains_max_log: bounds.hi[3]!,
     loo_median_factor: medianFactor,
     loo_within_2x: within2x,
     loo_log_rmse: looRmse,
     r_squared: 1 - ssRes / ssTot,
+    huber_k: HUBER_K,
+    huber_iterations: iterations,
   };
 }
 
@@ -440,24 +503,24 @@ export function impliedValue(
   high: number;
   growthPct: number;
   growthEffect: number;
-  ageYears: number;
-  ageEffect: number;
+  chainsCount: number;
+  chainsEffect: number;
   categoryOffset: number;
   age: number | null;
 } {
   const age = ageDays(asOf, protocol.listed_at);
-  const bounds = { growthMin: fit.growth_min, growthMax: fit.growth_max, ageMin: fit.age_min_years, ageMax: fit.age_max_years };
-  const x = fitInputs(protocol, asOf, bounds);
+  const bounds = { lo: [1, -Infinity, fit.growth_min, fit.chains_min_log], hi: [1, Infinity, fit.growth_max, fit.chains_max_log] };
+  const x = clippedFeatures(protocol, bounds);
   const growthPct = x[2];
   const growthEffect = fit.growth_per_point * x[2];
-  const ageYears = x[3];
-  const ageEffect = fit.age_per_year * x[3];
+  const chainsCount = Math.max(1, protocol.chains.length);
+  const chainsEffect = fit.chains_per_log * x[3];
   const categoryOffset = fit.category_offsets[protocol.category ?? ''] ?? 0;
-  const logValue = fit.intercept + fit.tvl_slope * x[1] + growthEffect + ageEffect + categoryOffset;
+  const logValue = fit.intercept + fit.tvl_slope * x[1] + growthEffect + chainsEffect + categoryOffset;
   const implied = Math.max(1, Math.round(Math.exp(logValue)));
   const low = Math.max(1, Math.round(implied / fit.loo_median_factor));
   const high = Math.round(implied * fit.loo_median_factor);
-  return { implied, low, high, growthPct, growthEffect, ageYears, ageEffect, categoryOffset, age };
+  return { implied, low, high, growthPct, growthEffect, chainsCount, chainsEffect, categoryOffset, age };
 }
 
 /** A farm plan's true cost in dollars: the capital is a deposit that comes back on exit,
@@ -568,8 +631,8 @@ export function buildBoard(snapshot: Snapshot, fit: FitResult): BoardRow[] {
       tvl_slope: round4(fit.tvl_slope),
       growth_pct: s.growthPct,
       growth_effect: round4(s.growthEffect),
-      age_years: round4(s.ageYears),
-      age_effect: round4(s.ageEffect),
+      chains_count: s.chainsCount,
+      chains_effect: round4(s.chainsEffect),
       category_offset: round4(s.categoryOffset),
       age_days: s.age,
     },
@@ -599,7 +662,9 @@ function capitalFor(p: SnapshotProtocol): number {
   return 50;
 }
 
-/** How long to hold, from the protocol's age: younger protocols get a longer qualifying window. */
+/** How long to hold, from the protocol's age: younger protocols get a longer qualifying window.
+ * Age does not price the token, but it still sets the hold: a young protocol needs more
+ * time on record before its activity counts in a snapshot window. */
 function holdDaysFor(age: number | null): number {
   if (age === null) return 45;
   if (age < 180) return 60;
@@ -844,7 +909,7 @@ export function radarRow(row: BoardRow): RadarRow {
     intercept: row.model.intercept,
     tvl_slope: row.model.tvl_slope,
     growth_effect: row.model.growth_effect,
-    age_effect: row.model.age_effect,
+    chains_effect: row.model.chains_effect,
     category_offset: row.model.category_offset,
     farm_steps: row.farm_steps,
   };

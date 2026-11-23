@@ -22,16 +22,21 @@ body {
   font: 15px/1.5 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 .wrap { max-width: 1080px; margin: 0 auto; padding: 0 20px; }
-.top { background: var(--ink); color: #f6f3ec; padding: 28px 0 24px; }
+.top { background: var(--ink); color: #f6f3ec; padding: 20px 0 16px; }
 .kicker { margin: 0 0 6px; color: #8fd0c2; font-size: 12px; letter-spacing: 2px; text-transform: uppercase; font-weight: 700; }
-.top h1 { margin: 0 0 10px; font-size: 30px; line-height: 1.15; letter-spacing: -0.5px; }
-.lede { margin: 0 0 12px; max-width: 760px; color: #d8d3c4; font-size: 16px; }
+.top h1 { margin: 0 0 8px; font-size: 28px; line-height: 1.15; letter-spacing: -0.5px; }
+.lede { margin: 0 0 10px; max-width: 760px; color: #d8d3c4; font-size: 15px; }
 .formula {
   margin: 0 0 12px; max-width: 860px; color: #f6f3ec; font-size: 14px;
   background: #2a3347; border: 1px solid #3d4a63; border-radius: 6px; padding: 9px 12px;
   font-variant-numeric: tabular-nums;
 }
 .meta { margin: 0 0 14px; color: #a9a48f; font-size: 13px; }
+/* Integrity strip: the checks, answered on the first screen, in one row. */
+.strip { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
+.check { background: #0d6e5f; border: 1px solid #14957f; border-radius: 6px; padding: 7px 11px; font-size: 13px; }
+.check b { display: block; font-size: 15px; color: #fff; line-height: 1.2; }
+.check span { color: #bfe3d8; }
 .stats { display: flex; flex-wrap: wrap; gap: 8px; }
 .stat { background: #2a3347; border: 1px solid #3d4a63; border-radius: 6px; padding: 8px 12px; font-size: 13px; }
 .stat b { display: block; font-size: 19px; color: #fff; line-height: 1.2; }
@@ -39,7 +44,7 @@ body {
 .controls {
   display: flex; flex-wrap: wrap; gap: 10px; align-items: end;
   background: var(--card); border: 1px solid var(--line); border-radius: 8px;
-  padding: 14px; margin: 18px 0;
+  padding: 10px 14px; margin: 12px 0;
 }
 .ctl { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
 .ctl input, .ctl select {
@@ -66,6 +71,8 @@ body {
   position: absolute; top: 12px; right: 12px; font: inherit; font-size: 13px; cursor: pointer;
   background: var(--grey-soft); border: 1px solid var(--line); border-radius: 5px; padding: 5px 10px;
 }
+/* The netted farm verdict: the first thing a reader sees in the detail view. */
+.verdict { background: var(--teal-soft); border-left: 4px solid var(--teal); border-radius: 6px; padding: 10px 12px; font-size: 15px; }
 .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 12px; }
 .cell { background: var(--paper); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; }
 .cell b { display: block; font-size: 17px; }
@@ -77,7 +84,7 @@ body.detail-open .method { display: none; }
 
 .board { background: var(--card); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
 table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
-th, td { padding: 9px 12px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: top; }
+th, td { padding: 9px 10px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: top; }
 th { background: var(--paper); font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); }
 th.sortable { cursor: pointer; }
 th.sortable:hover { color: var(--teal); }

@@ -3,22 +3,22 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Token Radar — pre-token protocols ranked by implied value</title>
+<title>Token Radar — pre-token protocols ranked by expected launch value</title>
 <link rel="stylesheet" href="app.css">
 </head>
 <body>
 <header class="top">
   <div class="wrap">
-    <p class="kicker">Token Radar · model radar-7</p>
+    <p class="kicker">Token Radar · model radar-8</p>
     <h1>Which launch is worth farming next?</h1>
-    <p class="lede">Every protocol below records no token yet. Each is ranked by what its token would be
-    worth if its record stayed as it is — priced by an ensemble of three robust curves fitted
-    to the snapshot's own traded protocols, not by a hand-picked multiple: the curves, their
-    category offsets and their leave-one-out error band are all computed from the snapshot at
-    run time. Click any row for the model maths, the backtest band, the netted farm cost and
-    the seven steps to farm it.</p>
+    <p class="lede">Every protocol below records no token yet. Each is ranked by its EXPECTED launch
+    value — what its token would be worth if its record stayed as it is, times the peer
+    odds that a protocol like this one records a token at all. The raw fitted value is
+    shown as its own column next to it. Click any row for the model maths, the odds cell,
+    the netted farm verdict and the seven steps to farm it.</p>
     <p class="formula" id="formula">Loading the fitted ensemble…</p>
     <p class="meta" id="meta">Loading the snapshot…</p>
+    <div class="strip" id="strip" aria-label="Integrity strip"></div>
     <div class="stats" id="stats"></div>
   </div>
 </header>
@@ -33,7 +33,9 @@
       <option value="early">Early finds below the floor</option>
     </select></label>
     <label class="ctl">Sort by <select id="sort">
-      <option value="implied">Implied value</option>
+      <option value="expected">Expected value</option>
+      <option value="raw">Raw implied value</option>
+      <option value="odds">Token odds</option>
       <option value="tvl">TVL</option>
       <option value="change">7-day change</option>
       <option value="age">Age with no token</option>
@@ -55,6 +57,37 @@
   </section>
   <section class="method">
     <h2>How the radar works</h2>
+    <p><strong>Expected value = fitted implied value × token odds.</strong> The price is an
+    ensemble of three robust curves fitted to the snapshot's own traded protocols (see
+    below); the odds are the peer record's answer to a different question — how often a
+    protocol that looks like this one records a token at all. The board ranks by the
+    product, and shows both factors on every row, because ranking by the raw implied
+    value alone would put a $100M protocol with 3% peer odds above a $20M protocol with
+    25% peer odds, and a reader choosing what to farm should know both numbers. The
+    backtest band scales by the odds too, so each row's low and high are expected
+    values, and each row carries the rank range its band allows.</p>
+    <p><strong>Token odds — derived from the peer record, at run time.</strong> For each
+    protocol, count the snapshot's own protocols in the same age bucket and category
+    that record a token (market cap above zero), and divide by the cell size. The peer
+    rate rises monotonically with age: under 6 months 3.4%, 6–12 months 9.6%, 1–2 years
+    12.0%, 2–3 years 15.1%, over 3 years 25.8%; by category from 2.6% (Risk Curators)
+    to 33.3% (Basis Trading). Each cell rate is shrunk n/(n+20) toward its age bucket's
+    rate, and each bucket rate is itself shrunk n/(n+20) toward the overall rate of
+    16.9% (128 of 758 protocols). A protocol with no listed date takes the overall
+    rate — never the 29.2% of the null-age bucket (113 rows with no listed date), which
+    is a data quirk, not a peer rate. The cells are small (n = 11–30), so without the
+    shrinkage a single protocol would swing a row's odds; with it, the shrunk odds run
+    0.031–0.345 over all 758 protocols (an 11× spread) and 0.031–0.268 over the board's
+    rows. No rate is hardcoded: the same code counts any snapshot the house seals, and
+    each detail view shows its row's cell (bucket × category, k of n) so the odds can
+    be checked by hand.</p>
+    <p><strong>Base-rate caveat — read this before trusting the odds.</strong> These peer rates
+    are cross-sectional base rates, NOT calibrated forward launch probabilities. The
+    snapshot carries no token-launch dates, so it cannot say when — or even whether —
+    a protocol will issue a token. The odds say how often a protocol that looks like
+    this one, in this snapshot, records a token; nothing more. The expected value is
+    therefore a ranking device built from the only two things the snapshot can support
+    — a fitted price and a peer base rate — not a forecast of a launch.</p>
     <p><strong>Implied value — an ensemble of three robust curves fitted to the snapshot's own traded protocols.</strong>
     Each member fits log market cap on log TVL, growth and log chains by Huber-robust least
     squares (k = 1.345, iterated to convergence) over the traded protocols in this snapshot,
@@ -65,7 +98,7 @@
     weird protocol cannot set the price of the whole board. The three members differ in one
     thing each: the first takes growth raw, the second takes it through a signed log so a
     +400% week counts little more than a +4% week, and the third adds a TVL-curvature term
-    (log TVL − 17)² so the size curve can bend for the biggest protocols. The board's value
+    (log TVL − 17)² so the size curve can bend for the biggest protocols. The board's raw value
     is the mean of the three members' log predictions. No member alone beats the previous
     single-fit model on every backtest number; their average does, because the members
     disagree most where each is weakest. Each category then gets a shrunk offset (n/(n+20))
@@ -79,26 +112,46 @@
     the ratio filter to 0.005–20× does the same (median ×1.90). Age, in log form or as
     buckets, still flips sign across comp sets and still hurts every backtest number, so it
     stays out of the price. A median (L1) fit alone reaches a log RMSE of 1.504 but its
-    median factor is ×1.82, so it stays out of the ensemble. Every candidate change was
-    tried the same honest way — leave-one-out, bounds, fits and offsets all refitted
+    median factor is ×1.82, so it stays out of the ensemble. Fifteen further candidates were
+    tried the same honest way for this round and every one failed: TVL × growth, TVL × log
+    chains and growth × log chains interactions (median ×1.77–×1.79, in-sample R² 0.354 —
+    pure overfit); log-age and age-years (×1.81); chain-count dummies (×1.76–×1.82); a ratio
+    target with the TVL slope fixed at 1 (×1.86, R² 0.036); Huber k = 1.0 and 2.0 (×1.75,
+    ×1.76); plain OLS (×1.81); offset shrinkage n/(n+8) and n/(n+40) (×1.83, ×1.76);
+    k-nearest neighbours k = 5/8/12 (×1.79–×1.80) and a 50/50 blend with the first member
+    (×1.74); ridge-penalised interactions (×1.78–×1.82); a fourth ensemble member (×1.713 —
+    0.002, noise); and leave-one-out-tuned ensemble weights (×1.710 — 0.005, selection noise:
+    the tuned weights are unstable across split halves). The leave-one-out branch is closed:
+    the price engine is the previous round's ensemble exactly as it was. Every candidate
+    change was tried the same honest way — leave-one-out, bounds, fits and offsets all refitted
     without the comp being priced — and kept only when it improved all three backtest
     numbers. Age is still shown on every row and still sets the farm plan's hold time —
     a young protocol needs longer on record — it just does not price the token, because
     the traded protocols say it does not.</p>
+    <p><strong>Walk-forward — a second blind test.</strong> The ensemble fitted on the comps listed
+    before 2025 and tested on the comps listed after prices at median ×1.78, with 42.9% inside
+    2× and a log RMSE of 1.59 (36 comps fit, 42 tested). The reverse — fitted after 2025,
+    tested before — prices at median ×1.68, 41.7% inside 2×, log RMSE 1.31. The
+    leave-one-out numbers are the ones the band uses; the walk-forward numbers are the check
+    that the curve holds up on protocols listed later, which leave-one-out cannot show
+    because it shuffles the listing order away.</p>
     <p><strong>The band is what the backtest earns.</strong> Every comp is priced again by an
     ensemble that never saw it (leave-one-out, winsor bounds, robust fits and category
     offsets all refitted, for all three members). About 44% of the comps land within 2×
     of their real market cap and half within about ×1.72; the fit's R² is near 0.33. That
     is the honest size of the signal in this snapshot, and each row carries its band:
-    implied value ×/÷ the leave-one-out median factor. A wide band is not a failure of
-    the board — it is the measurement, shown next to the number.</p>
-    <p><strong>Netted farm plans.</strong> Each plan is generated from the protocol's own category,
+    expected value ×/÷ the leave-one-out median factor. A wide band is not a failure of
+    the board — it is the measurement, shown next to the number. The rank range on each
+    row is the band in rank terms: the best and worst rank the row's band overlaps.</p>
+    <p><strong>Netted farm plans, with a verdict.</strong> Each plan is generated from the protocol's own category,
     chains, TVL, age and seven-day trend: the capital, the hold time and the weekly cadence
     follow those figures, the first step names its primary chain and TVL tier, a growing row
     gets scale-in advice while a shrinking one gets a smaller first deposit until the trend
     flattens, and every step states what it costs and how long it takes. The detail view
-    nets the plan: the capital is a deposit that comes back on exit, so the true cost is the
-    gas across the plan, shown against the low end of the row's backtest band.</p>
+    nets the plan and gives a verdict: the capital is a deposit that comes back on exit, so
+    the true cost is the gas across the plan, shown against the low end of the row's EXPECTED
+    band — Strong farm when the expected low is at least 100× the gas, Farm at 10×, Marginal
+    when it barely covers the gas, Skip when it does not.</p>
     <p><strong>Scope.</strong> The watchlist is the floor, never the ceiling: 40 protocols at or above
     $50M of TVL that record no token and are not a wrapped, staked or bridged product of one that trades.
     The board adds every other rankable pre-token protocol the snapshot holds — 19 above the floor the
@@ -107,7 +160,10 @@
     carries no market cap, no CoinGecko id and no symbol for the protocol. It is the record, not proof:
     a protocol may still have a token its record does not carry. The Live tokens tab shows, separately,
     the protocols whose token already trades, at the market's own value — never mixed into the ranking.</p>
-    <p>Nothing here is financial advice, and a launch is never promised.</p>
+    <p>Nothing here is financial advice, and a launch is never promised. The gain from ranking by
+    expected value instead of raw implied value is unmeasurable locally — there is no local grade for
+    this competition; the live dev rate after submission is the only verdict — and the dashboard does
+    not present it as measured.</p>
     <p class="source" id="source"></p>
   </section>
 </main>

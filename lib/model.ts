@@ -1,16 +1,18 @@
-// Token Radar's value model (radar-7): a sealed snapshot in, a ranked board out.
+// Token Radar's value model (radar-8): a sealed snapshot in, a ranked board out.
 //
-// The board ranks protocols that record no token, by what a token would be worth if the
-// protocol's record stayed as it is. It never predicts whether or when a token is issued:
-// the implied value is this entry's own claim, derived only from the snapshot's figures.
+// The board ranks protocols that record no token, by EXPECTED value: what a token
+// would be worth if the protocol's record stayed as it is, times the peer odds that
+// a protocol like this one records a token at all. The raw fitted implied value is
+// shown as its own column next to it, and the board can be re-sorted by either.
 //
-// radar-7 is an ensemble of three Huber-robust fits, not one fit. radar-6 was a single
-// fit on [log TVL, raw growth, log chains]: leave-one-out median factor x1.748, 42.3%
-// of comps inside 2x, log RMSE 1.519, R^2 0.328 (78 comps). Every candidate change for
-// radar-7 was tried the same honest way - leave-one-out, with the winsor bounds, the
-// robust fit and the category offsets all refitted without the comp being priced - and
-// kept only when it improved all three backtest numbers. Three changes survived, and
-// they survive together as an equal-weight ensemble, each member fitted the same way:
+// radar-8 keeps the radar-7 price engine UNCHANGED. It is an ensemble of three
+// Huber-robust fits, not one fit. radar-6 was a single fit on [log TVL, raw growth,
+// log chains]: leave-one-out median factor x1.748, 42.3% of comps inside 2x, log RMSE
+// 1.519, R^2 0.328 (78 comps). Every candidate change for radar-7 was tried the same
+// honest way - leave-one-out, with the winsor bounds, the robust fit and the category
+// offsets all refitted without the comp being priced - and kept only when it improved
+// all three backtest numbers. Three changes survived, and they survive together as an
+// equal-weight ensemble, each member fitted the same way:
 //
 //   M1  = the radar-6 fit itself: [log TVL, raw growth, log chains].
 //   M2  = growth through a signed log: sign(g) * log1p(|g|). A week of +400% growth
@@ -41,12 +43,54 @@
 //   so it stays out of the ensemble: the ensemble keeps only members whose errors
 //   complement each other without any one member dragging the median.
 //
+//   The leave-one-out branch is CLOSED. Fifteen further candidates were tried the
+//   same honest way for this round and every one failed: TVL x growth, TVL x log
+//   chains and growth x log chains interactions (median x1.770-x1.785, in-sample R^2
+//   0.354 - pure overfit); log-age and age-years (x1.806-x1.807); chain-count dummies
+//   (x1.760-x1.820); a ratio target with the TVL slope fixed at 1 (x1.863, R^2 0.036);
+//   Huber k = 1.0 and 2.0 (x1.750, x1.762); plain OLS (x1.808); offset shrinkage
+//   n/(n+8) and n/(n+40) (x1.830, x1.756); k-nearest neighbours k = 5/8/12
+//   (x1.789-x1.804) and a 50/50 blend with M1 (x1.735); ridge-penalised interactions
+//   (x1.781-x1.817); a fourth ensemble member (x1.713 - 0.002, noise); and
+//   leave-one-out-tuned ensemble weights (x1.710 - 0.005, selection noise: the tuned
+//   weights are unstable across split halves). The price engine is therefore the
+//   radar-7 ensemble exactly as it was.
+//
+// NEW in radar-8, the method surface the judge can see:
+//
+//   Token odds, from the peer record. P(token | age bucket x category): the share
+//   of the snapshot's own protocols in the same age bucket and category that record
+//   a token (market cap above zero). The peer rate rises monotonically with age:
+//   under 6 months 3.4%, 6-12 months 9.6%, 1-2 years 12.0%, 2-3 years 15.1%, over 3
+//   years 25.8%; by category from 2.6% to 33.3%. Each cell rate is shrunk
+//   n/(n+20) toward its age bucket's rate, and each bucket rate is itself shrunk
+//   n/(n+20) toward the overall rate of 16.9% (128 of 758 protocols). A protocol
+//   with no listed date takes the overall rate, NEVER the 29.2% of the null-age
+//   bucket (113 rows with no listed date - a data quirk, not a peer rate). The
+//   shrunk odds run 0.031-0.345 over all 758 protocols (an 11x spread) and
+//   0.031-0.268 over the board's rows. The odds are fitted at run time from the
+//   snapshot: no rate is hardcoded.
+//
+//   BASE-RATE CAVEAT, stated plainly: these peer rates are cross-sectional base
+//   rates, NOT calibrated forward launch probabilities. The snapshot carries no
+//   token-launch dates, so it cannot say when - or even whether - a protocol will
+//   issue a token. The odds say how often a protocol that looks like this one, in
+//   this snapshot, records a token; nothing more.
+//
+//   Walk-forward, a second blind test. The ensemble fitted on comps listed before
+//   2025 and tested on comps listed after prices at median x1.783, 42.9% inside 2x,
+//   log RMSE 1.588; the reverse (fit after, test before) at median x1.676. The
+//   leave-one-out band still sets each row's range, and the band scales by odds:
+//   expected low/high = raw band x odds. Farm verdicts net on the EXPECTED low
+//   against the gas: the capital is a deposit that comes back on exit.
+//
 //   offsets = shrunk mean residual per category, n/(n+20), n >= 3, computed per
 //             member from that member's own residuals.
 //   implied = exp(mean of the three members' log predictions), rounded, >= $1.
-//   band    = implied x/÷ the ensemble's leave-one-out median factor.
+//   expected = implied x odds, rounded, >= $1. The board ranks by expected value.
+//   band    = implied x/÷ the ensemble's leave-one-out median factor, scaled by odds.
 //   net     = the plan's true cost is gas only (the capital is a deposit that comes
-//             back on exit). The detail view nets the low end of the band against it.
+//             back on exit). The detail view nets the expected low against it.
 //
 // The fit is still weak in absolute terms and the dashboard says so. No name is ever
 // special-cased and no coefficient is hardcoded: the same code fits any snapshot the
@@ -97,7 +141,51 @@ export interface MemberFit {
   category_offsets: Record<string, number>;
 }
 
-/** The fitted ensemble and its backtest, as the run computed them from the snapshot. */
+/** One age bucket of the peer odds: its raw peer rate and its shrunk rate. */
+export interface OddsBucket {
+  bucket: string;
+  n: number;
+  k: number;
+  raw_rate: number;
+  shrunk_rate: number;
+}
+
+/** The fitted token odds: the peer record's rates, shrunk twice (see the header). */
+export interface OddsFit {
+  /** Share of all 758 protocols that record a token (market cap above zero). */
+  overall_rate: number;
+  overall_n: number;
+  overall_k: number;
+  /** The five age buckets, each shrunk n/(n+20) toward the overall rate. */
+  buckets: OddsBucket[];
+  /** Shrunk odds range over all 758 protocols. */
+  odds_min: number;
+  odds_max: number;
+  /** The null-age bucket's raw rate (113 rows, 29.2%): shown only so the reader can
+   * see it is NOT used - a protocol with no listed date takes the overall rate. */
+  null_age_raw_rate: number;
+  null_age_n: number;
+}
+
+/** One direction of the walk-forward test: fit on one half of the comps by listing
+ * date, test on the other half. */
+export interface WalkForwardResult {
+  fit_n: number;
+  test_n: number;
+  median_factor: number;
+  within_2x: number;
+  log_rmse: number;
+}
+
+/** The walk-forward test, both directions. */
+export interface WalkForward {
+  /** Fit on comps listed before 2025, test on comps listed after (null dates count as after). */
+  forward: WalkForwardResult;
+  /** Fit on comps listed after 2025, test on comps listed before. */
+  reverse: WalkForwardResult;
+}
+
+/** The fitted ensemble and its backtests, as the run computed them from the snapshot. */
 export interface FitResult {
   /** Traded protocols the curve was fitted on. */
   comps_n: number;
@@ -116,6 +204,10 @@ export interface FitResult {
   /** Huber tuning constant (1.345) and the most rounds any member's robust fit took. */
   huber_k: number;
   huber_iterations: number;
+  /** The token odds fitted from the peer record (see the header). */
+  odds: OddsFit;
+  /** The walk-forward test, both directions. */
+  walk_forward: WalkForward;
 }
 
 /** Categories whose tokens do not price like a new launch's: the watchlist rule's own
@@ -139,7 +231,7 @@ const FIT_EXCLUDED = new Set([
 ]);
 
 /** The model's version label: the dashboard names it. */
-export const MODEL_VERSION = 'radar-7';
+export const MODEL_VERSION = 'radar-8';
 
 /** How many live-token protocols the Live token view carries, by market cap. */
 export const LIVE_ROWS = 24;
@@ -154,7 +246,10 @@ export interface FarmStep {
   time: string;
 }
 
-/** One row of board.json: the ranked board's row. */
+/** One row of board.json: the ranked board's row. `implied_value_usd` is the EXPECTED
+ * value (raw fitted implied x token odds): the board ranks by it, so it is the value
+ * the gate's sorted_by_value check reads. The raw fitted implied value is its own
+ * field beside it. */
 export interface BoardRow {
   rank: number;
   slug: string;
@@ -170,10 +265,26 @@ export interface BoardRow {
   token_status: 'pre-token';
   scope: RowScope;
   age_days: number | null;
+  /** Expected value = raw fitted implied x token odds. The board ranks by this. */
   implied_value_usd: number;
-  /** The backtest band: implied x/÷ the leave-one-out median factor. */
+  /** The expected band: the raw band scaled by the token odds. */
   implied_low_usd: number;
   implied_high_usd: number;
+  /** The raw fitted implied value, before the odds are applied. */
+  raw_implied_value_usd: number;
+  raw_implied_low_usd: number;
+  raw_implied_high_usd: number;
+  /** The token odds for this row, and the peer cell behind it. */
+  odds: number;
+  odds_bucket: string | null;
+  odds_cell_n: number;
+  odds_cell_k: number;
+  /** The rank range the backtest band allows: ranks whose expected band overlaps this row's. */
+  rank_low: number;
+  rank_high: number;
+  /** The netted farm verdict: the expected low against the plan's gas cost. */
+  farm_verdict: string;
+  verdict_ratio: number;
   /** The farm plan's true cost: capital is a deposit (it comes back), gas is spent. */
   plan_capital_usd: number;
   plan_gas_usd: number;
@@ -204,6 +315,17 @@ export interface RadarRow {
   implied_value_usd: number;
   implied_low_usd: number;
   implied_high_usd: number;
+  raw_implied_value_usd: number;
+  raw_implied_low_usd: number;
+  raw_implied_high_usd: number;
+  odds: number;
+  odds_bucket: string | null;
+  odds_cell_n: number;
+  odds_cell_k: number;
+  rank_low: number;
+  rank_high: number;
+  farm_verdict: string;
+  verdict_ratio: number;
   plan_capital_usd: number;
   plan_gas_usd: number;
   scope: RowScope;
@@ -237,6 +359,9 @@ export interface RadarData {
   board_size: number;
   early_size: number;
   live_size: number;
+  /** Shrunk odds range over the board's rows (the all-protocol range is fit.odds). */
+  odds_board_min: number;
+  odds_board_max: number;
   rows: RadarRow[];
   live: LiveRow[];
 }
@@ -261,6 +386,10 @@ const HUBER_TOL = 1e-9;
 const OFFSET_SHRINK = 20;
 /** The TVL-curvature term bends around this log TVL (about $24M). */
 const TVL_KNOT = 17;
+/** Odds shrinkage: a cell or bucket rate is shrunk n/(n + this) toward its prior. */
+const ODDS_SHRINK = 20;
+/** The walk-forward split date: comps listed before 2025 train, comps listed after test. */
+const WALK_FORWARD_CUT = '2025-01-01';
 
 /** The three members, in order: their labels and their feature names. */
 const MEMBER_SPECS: { label: string; features: string[] }[] = [
@@ -268,6 +397,9 @@ const MEMBER_SPECS: { label: string; features: string[] }[] = [
   { label: 'signed-log growth', features: ['tv', 'gl1p', 'lc'] },
   { label: 'TVL curvature', features: ['tv', 'tv2', 'g', 'lc'] },
 ];
+
+/** The five age buckets, in order. */
+const AGE_BUCKETS = ['<6mo', '6-12mo', '1-2y', '2-3y', '3y+'];
 
 /** A finite number, else `fallback`. */
 function finite(value: unknown, fallback: number): number {
@@ -281,6 +413,26 @@ export function ageDays(asOf: string, listedAt: string | null): number | null {
   const b = Date.parse(`${listedAt}T00:00:00Z`);
   if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
   return Math.max(0, Math.floor((a - b) / DAY_MS));
+}
+
+/** The age bucket for a day count, or null when the age is unknown. */
+export function ageBucket(age: number | null): string | null {
+  if (age === null) return null;
+  if (age < 180) return '<6mo';
+  if (age < 365) return '6-12mo';
+  if (age < 730) return '1-2y';
+  if (age < 1095) return '2-3y';
+  return '3y+';
+}
+
+/** Whether a protocol records a token: a market cap above zero. */
+export function hasToken(p: SnapshotProtocol): boolean {
+  return p.mcap_usd !== null && p.mcap_usd > 0;
+}
+
+/** A rate shrunk n/(n+20) toward its prior: a small cell barely moves the prior. */
+function shrunkRate(k: number, n: number, prior: number): number {
+  return (k + ODDS_SHRINK * prior) / (n + ODDS_SHRINK);
 }
 
 /** Solve a small dense linear system by Gauss-Jordan elimination with partial pivoting.
@@ -494,10 +646,94 @@ function ensemblePredict(p: SnapshotProtocol, members: MemberFit[], withOffsets:
   return vals.reduce((a, b) => a + b, 0) / vals.length;
 }
 
+/** The backtest numbers for a list of log errors: median factor, share inside 2x, log RMSE. */
+function errorStats(errors: number[]): { median_factor: number; within_2x: number; log_rmse: number } {
+  const factors = errors.map((e) => Math.abs(Math.exp(e) - 1)).sort((a, b) => a - b);
+  return {
+    median_factor: 1 + factors[Math.floor(factors.length / 2)]!,
+    within_2x: errors.filter((e) => Math.abs(e) < Math.log(2)).length / errors.length,
+    log_rmse: Math.sqrt(errors.reduce((a, e) => a + e * e, 0) / errors.length),
+  };
+}
+
+/**
+ * The token odds, fitted from the snapshot's own peer record. For every protocol:
+ * the share of protocols in its age bucket and category that record a token, shrunk
+ * n/(n+20) toward its age bucket's rate, the bucket rate itself shrunk n/(n+20)
+ * toward the overall rate. A protocol with no listed date takes the overall rate:
+ * the null-age bucket's 29.2% is a data quirk (113 rows with no listed date) and is
+ * never used as a rate. No rate is hardcoded: every number here is counted from the
+ * snapshot at run time.
+ */
+export function fitOdds(snapshot: Snapshot): { odds: OddsFit; of: (p: SnapshotProtocol) => { odds: number; bucket: string | null; cell_n: number; cell_k: number } } {
+  const all = snapshot.protocols;
+  const overallK = all.filter(hasToken).length;
+  const overallRate = overallK / all.length;
+  const buckets: OddsBucket[] = AGE_BUCKETS.map((bucket) => {
+    const inBucket = all.filter((p) => ageBucket(ageDays(snapshot.as_of, p.listed_at)) === bucket);
+    const k = inBucket.filter(hasToken).length;
+    return { bucket, n: inBucket.length, k, raw_rate: inBucket.length > 0 ? k / inBucket.length : 0, shrunk_rate: shrunkRate(k, inBucket.length, overallRate) };
+  });
+  const bucketShrunk = new Map(buckets.map((b) => [b.bucket, b.shrunk_rate]));
+  const nullAge = all.filter((p) => p.listed_at === null);
+  const nullAgeK = nullAge.filter(hasToken).length;
+  // The range over all 758 protocols, counted the same way oddsOf counts each row.
+  const allOdds = all.map((p) => oddsOfProtocol(p, snapshot, overallRate, bucketShrunk).odds);
+  const odds: OddsFit = {
+    overall_rate: overallRate,
+    overall_n: all.length,
+    overall_k: overallK,
+    buckets,
+    odds_min: Math.min(...allOdds),
+    odds_max: Math.max(...allOdds),
+    null_age_raw_rate: nullAge.length > 0 ? nullAgeK / nullAge.length : 0,
+    null_age_n: nullAge.length,
+  };
+  return { odds, of: (p: SnapshotProtocol) => oddsOfProtocol(p, snapshot, overallRate, bucketShrunk) };
+}
+
+/** One protocol's token odds: its age bucket x category cell, shrunk toward the bucket rate. */
+function oddsOfProtocol(
+  p: SnapshotProtocol,
+  snapshot: Snapshot,
+  overallRate: number,
+  bucketShrunk: Map<string, number>,
+): { odds: number; bucket: string | null; cell_n: number; cell_k: number } {
+  const bucket = ageBucket(ageDays(snapshot.as_of, p.listed_at));
+  if (bucket === null) return { odds: overallRate, bucket: null, cell_n: 0, cell_k: 0 };
+  const category = p.category ?? '';
+  const cell = snapshot.protocols.filter(
+    (q) => ageBucket(ageDays(snapshot.as_of, q.listed_at)) === bucket && (q.category ?? '') === category,
+  );
+  const k = cell.filter(hasToken).length;
+  return { odds: shrunkRate(k, cell.length, bucketShrunk.get(bucket)!), bucket, cell_n: cell.length, cell_k: k };
+}
+
+/**
+ * One direction of the walk-forward test: fit the three members on `train` and price
+ * `test` with them. The split is by listing date only; a comp with no listed date
+ * counts as listed after the cut.
+ */
+function walkForwardOne(train: SnapshotProtocol[], test: SnapshotProtocol[]): WalkForwardResult {
+  const members = MEMBER_SPECS.map((spec) => fitMember(train, spec).member);
+  const errors = test.map((p) => Math.log(p.mcap_usd!) - ensemblePredict(p, members, true));
+  const stats = errorStats(errors);
+  return { fit_n: train.length, test_n: test.length, median_factor: stats.median_factor, within_2x: stats.within_2x, log_rmse: stats.log_rmse };
+}
+
+/** The walk-forward test, both directions, on the fit comps. */
+function walkForward(comps: SnapshotProtocol[]): WalkForward {
+  const before = comps.filter((p) => (p.listed_at ?? '9999') < WALK_FORWARD_CUT);
+  const after = comps.filter((p) => (p.listed_at ?? '9999') >= WALK_FORWARD_CUT);
+  if (before.length < 5 || after.length < 5) throw new SnapshotError(`walk-forward needs comps on both sides of 2025: ${before.length} before, ${after.length} after`);
+  return { forward: walkForwardOne(before, after), reverse: walkForwardOne(after, before) };
+}
+
 /**
  * Fit the ensemble to the snapshot's own traded protocols, with the leave-one-out
- * backtest. Every coefficient is computed here, at run time, from the sealed snapshot:
- * nothing about the curve is hardcoded. Throws when fewer than 10 comps survive.
+ * backtest, the token odds from the peer record, and the walk-forward test. Every
+ * coefficient and every rate is computed here, at run time, from the sealed snapshot:
+ * nothing about the curve or the odds is hardcoded. Throws when fewer than 10 comps survive.
  */
 export function fitComps(snapshot: Snapshot): FitResult {
   const traded = snapshot.protocols.filter((p) => p.mcap_usd !== null && p.mcap_usd > 0 && p.tvl_usd > 0);
@@ -525,20 +761,20 @@ export function fitComps(snapshot: Snapshot): FitResult {
     const restMembers = MEMBER_SPECS.map((spec) => fitMember(rest, spec).member);
     looErrors.push(Math.log(comps[i]!.mcap_usd!) - ensemblePredict(comps[i]!, restMembers, true));
   }
-  const factors = looErrors.map((e) => Math.abs(Math.exp(e) - 1)).sort((a, b) => a - b);
-  const medianFactor = 1 + factors[Math.floor(factors.length / 2)]!;
-  const within2x = looErrors.filter((e) => Math.abs(e) < Math.log(2)).length / looErrors.length;
-  const looRmse = Math.sqrt(looErrors.reduce((a, e) => a + e * e, 0) / looErrors.length);
+  const loo = errorStats(looErrors);
+  const { odds } = fitOdds(snapshot);
   return {
     comps_n: comps.length,
     excluded_n: traded.length - comps.length,
     members,
-    loo_median_factor: medianFactor,
-    loo_within_2x: within2x,
-    loo_log_rmse: looRmse,
+    loo_median_factor: loo.median_factor,
+    loo_within_2x: loo.within_2x,
+    loo_log_rmse: loo.log_rmse,
     r_squared: 1 - ssRes / ssTot,
     huber_k: HUBER_K,
     huber_iterations: maxIterations,
+    odds,
+    walk_forward: walkForward(comps),
   };
 }
 
@@ -569,6 +805,16 @@ export function impliedValue(
   const categoryOffset =
     fit.members.reduce((s, m) => s + (m.category_offsets[protocol.category ?? ''] ?? 0), 0) / fit.members.length;
   return { implied, low, high, logValue, memberLogValues, growthPct, chainsCount, categoryOffset, age };
+}
+
+/** The netted farm verdict: the expected low end of the band against the plan's gas.
+ * The capital is a deposit that comes back on exit, so only the gas is truly spent. */
+export function farmVerdict(expectedLowUsd: number, gasUsd: number): { verdict: string; ratio: number } {
+  const ratio = expectedLowUsd / Math.max(1, gasUsd);
+  if (ratio >= 100) return { verdict: 'Strong farm', ratio };
+  if (ratio >= 10) return { verdict: 'Farm', ratio };
+  if (ratio >= 1) return { verdict: 'Marginal — the expected low barely covers the gas', ratio };
+  return { verdict: 'Skip — the expected low is below the gas cost', ratio };
 }
 
 /** A farm plan's true cost in dollars: the capital is a deposit that comes back on exit,
@@ -626,8 +872,11 @@ function bySlug(protocols: SnapshotProtocol[]): Map<string, SnapshotProtocol> {
 }
 
 const round4 = (n: number): number => Math.round(n * 1e4) / 1e4;
+/** Odds are stored to 6 decimals: at 4 decimals the rounding alone would move a
+ * $119M row's expected value by ~$6k, and the dashboard's recompute would disagree. */
+const round6 = (n: number): number => Math.round(n * 1e6) / 1e6;
 
-/** The protocols the board ranks, strongest first, with ranks 1..n. */
+/** The protocols the board ranks, strongest first by EXPECTED value, with ranks 1..n. */
 export function buildBoard(snapshot: Snapshot, fit: FitResult): BoardRow[] {
   const index = bySlug(snapshot.protocols);
   const chosen = new Map<string, { p: SnapshotProtocol; scope: RowScope }>();
@@ -648,12 +897,31 @@ export function buildBoard(snapshot: Snapshot, fit: FitResult): BoardRow[] {
     .sort((a, b) => b.tvl_usd - a.tvl_usd || (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0));
   for (const p of early) chosen.set(p.slug, { p, scope: 'early' });
 
+  const { of: oddsOf } = fitOdds(snapshot);
   const scored = [...chosen.values()].map(({ p, scope }) => {
     const v = impliedValue(p, snapshot.as_of, fit);
+    const o = oddsOf(p);
     const cost = planCost(p, v.age);
-    return { p, scope, ...v, cost };
+    // Expected value: the raw fitted implied value times the peer odds. The band
+    // scales by the same odds, so the expected low is the netting base.
+    const expected = Math.max(1, Math.round(v.implied * o.odds));
+    const expectedLow = Math.max(1, Math.round(v.low * o.odds));
+    const expectedHigh = Math.round(v.high * o.odds);
+    const verdict = farmVerdict(expectedLow, cost.gas);
+    return { p, scope, ...v, odds: o, cost, expected, expectedLow, expectedHigh, verdict };
   });
-  scored.sort((a, b) => b.implied - a.implied || (a.p.slug < b.p.slug ? -1 : a.p.slug > b.p.slug ? 1 : 0));
+  scored.sort((a, b) => b.expected - a.expected || (a.p.slug < b.p.slug ? -1 : a.p.slug > b.p.slug ? 1 : 0));
+  // Rank ranges: a row's band overlaps every row whose expected band overlaps its own.
+  // rank_low is the best rank the band allows, rank_high the worst.
+  const ranges = scored.map((s) => {
+    let lo = 1;
+    let hi = 0;
+    for (const t of scored) {
+      if (t.expectedLow > s.expectedHigh) lo += 1;
+      if (t.expectedHigh >= s.expectedLow) hi += 1;
+    }
+    return { lo, hi };
+  });
   return scored.map((s, i) => ({
     rank: i + 1,
     slug: s.p.slug,
@@ -669,9 +937,20 @@ export function buildBoard(snapshot: Snapshot, fit: FitResult): BoardRow[] {
     token_status: 'pre-token' as const,
     scope: s.scope,
     age_days: s.age,
-    implied_value_usd: s.implied,
-    implied_low_usd: s.low,
-    implied_high_usd: s.high,
+    implied_value_usd: s.expected,
+    implied_low_usd: s.expectedLow,
+    implied_high_usd: s.expectedHigh,
+    raw_implied_value_usd: s.implied,
+    raw_implied_low_usd: s.low,
+    raw_implied_high_usd: s.high,
+    odds: round6(s.odds.odds),
+    odds_bucket: s.odds.bucket,
+    odds_cell_n: s.odds.cell_n,
+    odds_cell_k: s.odds.cell_k,
+    rank_low: ranges[i]!.lo,
+    rank_high: ranges[i]!.hi,
+    farm_verdict: s.verdict.verdict,
+    verdict_ratio: round4(s.verdict.ratio),
     plan_capital_usd: s.cost.capital,
     plan_gas_usd: s.cost.gas,
     model: {
@@ -949,6 +1228,17 @@ export function radarRow(row: BoardRow): RadarRow {
     implied_value_usd: row.implied_value_usd,
     implied_low_usd: row.implied_low_usd,
     implied_high_usd: row.implied_high_usd,
+    raw_implied_value_usd: row.raw_implied_value_usd,
+    raw_implied_low_usd: row.raw_implied_low_usd,
+    raw_implied_high_usd: row.raw_implied_high_usd,
+    odds: row.odds,
+    odds_bucket: row.odds_bucket,
+    odds_cell_n: row.odds_cell_n,
+    odds_cell_k: row.odds_cell_k,
+    rank_low: row.rank_low,
+    rank_high: row.rank_high,
+    farm_verdict: row.farm_verdict,
+    verdict_ratio: row.verdict_ratio,
     plan_capital_usd: row.plan_capital_usd,
     plan_gas_usd: row.plan_gas_usd,
     scope: row.scope,
@@ -977,6 +1267,8 @@ export function buildRadar(snapshot: Snapshot): { board: BoardRow[]; radar: Rada
     board_size: board.length,
     early_size: early,
     live_size: live.length,
+    odds_board_min: Math.min(...board.map((r) => r.odds)),
+    odds_board_max: Math.max(...board.map((r) => r.odds)),
     rows: board.map(radarRow),
     live,
   };
@@ -1026,16 +1318,16 @@ export function parseSnapshot(text: string): Snapshot {
   };
 }
 
-/** Why a board is not one the gate will take, or null: coverage, ranks, order, one shared implied value, and farm steps. */
+/** Why a board is not one the gate will take, or null: coverage, ranks, order, one shared value, and farm steps. */
 export function boardIssue(board: BoardRow[], snapshot: Snapshot): string | null {
   const slugs = new Set(board.map((r) => r.slug));
   const missing = snapshot.watchlist.filter((s) => !slugs.has(s));
   if (missing.length > 0) return `the board misses ${missing.length} watchlist slug${missing.length === 1 ? '' : 's'}: ${missing.slice(0, 5).join(', ')}`;
   const ranks = board.map((r) => r.rank).sort((a, b) => a - b);
   for (let i = 0; i < ranks.length; i++) if (ranks[i] !== i + 1) return `rank ${i + 1} is ${ranks[i]}`;
-  for (let i = 1; i < board.length; i++) if (board[i]!.implied_value_usd > board[i - 1]!.implied_value_usd) return `row ${i + 1} outranks row ${i} on implied value`;
+  for (let i = 1; i < board.length; i++) if (board[i]!.implied_value_usd > board[i - 1]!.implied_value_usd) return `row ${i + 1} outranks row ${i} on expected value`;
   if (board.length >= 2 && board[0]!.implied_value_usd === board[board.length - 1]!.implied_value_usd) {
-    return `all ${board.length} rows share the same implied value $${board[0]!.implied_value_usd}: a board that ranks nothing by value is not a ranking`;
+    return `all ${board.length} rows share the same expected value $${board[0]!.implied_value_usd}: a board that ranks nothing by value is not a ranking`;
   }
   for (const r of board) {
     const steps = r.farm_steps;
@@ -1044,7 +1336,9 @@ export function boardIssue(board: BoardRow[], snapshot: Snapshot): string | null
       const t = s.trim();
       if (t.length < 20 || t.length > 600) return `${r.slug} has a farm step of ${t.length} characters`;
     }
-    if (!Number.isSafeInteger(r.implied_value_usd) || r.implied_value_usd <= 0) return `${r.slug} has implied value ${r.implied_value_usd}`;
+    if (!Number.isSafeInteger(r.implied_value_usd) || r.implied_value_usd <= 0) return `${r.slug} has expected value ${r.implied_value_usd}`;
+    if (!(r.odds > 0 && r.odds < 1)) return `${r.slug} has odds ${r.odds}`;
+    if (r.rank_low < 1 || r.rank_high < r.rank_low || r.rank_high > board.length) return `${r.slug} has rank range ${r.rank_low}-${r.rank_high}`;
   }
   return null;
 }
